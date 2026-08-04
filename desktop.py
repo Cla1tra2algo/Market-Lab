@@ -22,12 +22,19 @@ function_dict = {
 
 function_list = list(function_dict.keys())
 
+def skip():
+    res = questionary.select("", choices=["Yes"]).ask()
+
+    if res == "Yes":
+        print(erase, end="")
+
+
 values_list = []
 
 print(" ")
 print(" ")
-
-questionary.print("-- MARKET LAB --", style="fg:pink")
+questionary.print("I-- MARKET LAB --I", style="fg:pink")
+print("")
 
 def data_base():
 
@@ -131,6 +138,9 @@ while True :
 
     if command == "📈 Calculate Indicators":
 
+        print(erase, end="")
+        print("📈 Calculate Indicators")
+
         name = input("Name : ")
         after_name = questionary.select("Adding an After Name ? : ",
                                         ["False", "True"]).ask()
@@ -138,7 +148,7 @@ while True :
 
         print(erase, end="")
 
-        function_ = questionary.select("Select a function :", choices = function_list).ask()
+        function_ = questionary.autocomplete("Select a function :", choices=function_list).ask()
 
         function_ = function_dict[function_]
 
@@ -162,8 +172,11 @@ while True :
         for i in range(function_[1]):
             parameters.append(questionary.autocomplete(f"Select parameter {i+1} : ", choices=existing_parameters).ask())
 
-
         app.general_application(cursor, name, after_name, function_[0], window, parameters)
+
+
+
+        history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
     if command == "📊 Calculate Stats":
         command = questionary.select("Number of Variables : ",
@@ -182,9 +195,9 @@ while True :
         if after_command == "stat":
             after_command = input("number of var : ")
 
-    if command == "🗑️ Delete Column":
+    if command == "🗑️  Delete Column":
 
-        print(erase, end="")
+        #print(erase, end="")
         print("🗑️ Delete Column")
 
         cursor.execute("""PRAGMA table_info(candles)""")
@@ -206,9 +219,13 @@ while True :
         print(erase, end="")
         print("📖 History")
 
+        print(history)
+
+        skip()
+
     if command == "❌ Exit":
         questionary.print("Leaving MARKET LAB ", style="fg:red")
         break
 
-        
+
 
