@@ -1,0 +1,62 @@
+from datetime import datetime
+import requests
+
+def extraction(url, cursor, symbol, interval, timestamp):
+
+    count = 0
+    while True :
+        count += 1
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": 1000,
+            "startTime": timestamp
+        }
+        response = requests.get(url, params=params)
+
+        data = response.json()
+
+        if len(data) == 0 :  # Regarde si des donnés renvoyées ou si elles l'ont toute déjà été
+            break          
+
+        for candle in data :
+
+            open_time = candle[0]
+            open = float(candle[1])
+            high = float(candle[2])
+            low = float(candle[3])
+            close = float(candle[4])
+            volume = float(candle[5])
+            close_time = float(candle[6])
+            quote_asset_vol = float(candle[7])
+            number_of_trades = float(candle[8])
+            taker_buy_base_asset_volume = float(candle[9])
+            taker_buy_quote_asset_volume = float(candle[10])
+
+            features = "open_time, open, high, low, close, volume, close_time, quote_asset_vol, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume"
+            values = [open_time, 
+                      open, 
+                      high, 
+                      low, 
+                      close, 
+                      volume, 
+                      close_time, 
+                      quote_asset_vol, 
+                      number_of_trades, 
+                      taker_buy_base_asset_volume, 
+                      taker_buy_quote_asset_volume
+                      ]
+
+
+            cursor.execute(
+                f"INSERT INTO candles ({features}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                values
+                )
+
+        print(f"Candles collected : {count*1000}", end="\r")
+        
+        last = data[-1]
+
+        last_timestamp = last[0]
+        timestamp = last_timestamp + 1
+
