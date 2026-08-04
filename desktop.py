@@ -23,11 +23,14 @@ function_dict = {
 function_list = list(function_dict.keys())
 
 def skip():
-    res = questionary.select("", choices=["Yes"]).ask()
+    res = questionary.select("Close", choices=["Yes"]).ask()
 
     if res == "Yes":
         print(erase, end="")
 
+def yes_no(question):
+    rep = questionary.select(question, ["No", "Yes"]).ask()
+    return rep
 
 values_list = []
 
@@ -82,16 +85,16 @@ def data_base():
     )
     """)
 
-    print("")
-    questionary.print(f"Working on {symbol} {interval} {source}", style="fg:yellow") 
-    print("")
-
     conn.commit()
 
     return conn, cursor, source, symbol, interval
 
 
 conn, cursor, source, symbol, interval = data_base()
+
+print("")
+questionary.print(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
+print("")
 
 history = []
 
@@ -114,6 +117,9 @@ while True :
 
         data_base()
 
+        print("")
+        questionary.prin(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
+
         cursor.commit()
         conn.close()
 
@@ -135,6 +141,10 @@ while True :
             print("Data Downloaded !")
 
             history.append(f"{symbol} {interval} Downloaded From {source}")
+            skip()
+            print(erase, end="")
+            print(erase, end="")
+            print(erase, end="")
 
     if command == "📈 Calculate Indicators":
 
@@ -205,9 +215,9 @@ while True :
 
         parameters = questionary.select(f"Select parameter : ", choices=existing_parameters).ask()
 
-        yes_no = questionary.select(f"Deleting {parameters} ? For real 🤨 ?", ["No", "Yes"]).ask()
+        rep = yes_no(f"Deleting {parameters} ? For real 🤨 ?")
 
-        if yes_no == "Yes":
+        if rep == "Yes":
             cursor.execute(f"""
                 ALTER TABLE candles
                 DROP COLUMN {parameters}""")
@@ -218,14 +228,21 @@ while True :
     if command == "📘 History":
         print(erase, end="")
         print("📖 History")
-
-        print(history)
-
-        skip()
+        if len(history) == 0:
+            print("The Action History is empty")
+            skip()
+        else:
+            print(history)
+            skip()
 
     if command == "❌ Exit":
-        questionary.print("Leaving MARKET LAB ", style="fg:red")
-        break
+        rep = yes_no("Do you really wanna leave MARKET LAB ?")
 
+        if rep == "Yes":
+            questionary.print("Leaving MARKET LAB", style="fg:red")
+            break
+
+        else:
+            print(erase, end="")
 
 
