@@ -59,9 +59,9 @@ def filter_application(cursor, data):
     print("Filter Applied", end="\r")
 
 
-def general_application(cursor, name, after_name, function, window, parameters, start):
+def general_application(cursor, name, after_name, function, window, parameters):
 
-
+    window = int(window)
     cursor.execute("PRAGMA table_info(candles)")
 
     columns = [c[1] for c in cursor.fetchall()]

@@ -1,7 +1,10 @@
 from datetime import datetime
-import requests
+import requests 
+from time import *
 
-def extraction(url, cursor, symbol, interval, timestamp):
+def extraction_binance(cursor, symbol, interval, timestamp):
+
+    url = "https://api.binance.com/api/v3/klines"
 
     count = 0
     while True :
@@ -60,3 +63,36 @@ def extraction(url, cursor, symbol, interval, timestamp):
         last_timestamp = last[0]
         timestamp = last_timestamp + 1
 
+def extraction_hyperliquid(cursor, symbol, interval, timestamp):
+
+    url = "https://api.hyperliquid.xyz/info"
+
+    end = int(time.time()) * 1000
+
+    payload = {
+        "type" : "candleSnapshot", 
+        "req" : {
+            "coin": symbol,
+            "interval" : interval,
+            "startTime" : timestamp,
+            "endTime" : end}
+        }
+
+    response = requests.post(url, json=payload)
+    candles  = response.json()
+
+    print(f"{len(candles)} collected ")
+
+    last_candle = candles[-1]
+
+    print(last_candle)
+
+    open_times   = [r["t"] for r in candles]
+    list_open    = [float(r["o"]) for r in candles]
+    list_close   = [float(r["c"]) for r in candles]
+    list_high    = [float(r["h"]) for r in candles]
+    list_low     = [float(r["l"]) for r in candles]
+    list_volume  = [float(r["v"]) for r in candles]
+    list_nbtrade = [r["n"] for r in candles]
+
+    print(list_nbtrade)
