@@ -86,28 +86,34 @@ def data_base():
 
 conn, cursor, source, symbol, interval = data_base()
 
+history = []
 
 while True :
 
     command = questionary.select("Actions : ", 
-                                choices = ["Change or Create a DataBase",
-                                "Download Data",
-                                "Calculate Indicators",
-                                "Calculate Stats",
-                                "Plot",
-                                "Delete Column", 
-                                "Exit"]).ask()
+                                choices = [
+                                "📁 Change or Create a DataBase",
+                                "💾 Download Data",
+                                "📈 Calculate Indicators",
+                                "📊 Calculate Stats",
+                                "📉 Plot",
+                                "🗑️  Delete Column", 
+                                "📘 History",
+                                "❌ Exit"]).ask()
 
     print(erase)
 
-    if command == "Change or Creat DataBase" :
+    if command == "📁 Change or Create a DataBase":
 
         data_base()
 
         cursor.commit()
         conn.close()
 
-    if command == "Download Data":
+    if command == "💾 Download Data":
+
+        print(erase, end="")
+        print("💾 Download Data")
 
         if source == "Binance":
             de.extraction_binance(cursor, symbol, interval, timestamp)
@@ -121,7 +127,9 @@ while True :
 
             print("Data Downloaded !")
 
-    if command == "Calculate Indicators" :
+            history.append(f"{symbol} {interval} Downloaded From {source}")
+
+    if command == "📈 Calculate Indicators":
 
         name = input("Name : ")
         after_name = questionary.select("Adding an After Name ? : ",
@@ -157,21 +165,34 @@ while True :
 
         app.general_application(cursor, name, after_name, function_[0], window, parameters)
 
-    if command == "plot":
+    if command == "📊 Calculate Stats":
+        command = questionary.select("Number of Variables : ",
+                                     choices=[
+                                         "1 variable",
+                                         "2 variables (heatmap)"
+                                     ]).ask()
+
+    if command == "📉 Plot":
+
+        print(erase, end="")
+        print("📉 Plot")
 
         after_command = input("Plot command : ")
 
         if after_command == "stat":
             after_command = input("number of var : ")
 
-    if command == "Delete Column":
+    if command == "🗑️ Delete Column":
+
+        print(erase, end="")
+        print("🗑️ Delete Column")
 
         cursor.execute("""PRAGMA table_info(candles)""")
         existing_parameters = [row[1] for row in cursor.fetchall()]
 
         parameters = questionary.select(f"Select parameter : ", choices=existing_parameters).ask()
 
-        yes_no = questionary.select(f"Deleting {parameters} ? For real ?", ["No", "Yes"]).ask()
+        yes_no = questionary.select(f"Deleting {parameters} ? For real 🤨 ?", ["No", "Yes"]).ask()
 
         if yes_no == "Yes":
             cursor.execute(f"""
@@ -181,8 +202,12 @@ while True :
         else:
             print(erase, end="")
 
-    if command == "Exit":
-        print("Leaving MARKET LAB ")
+    if command == "📘 History":
+        print(erase, end="")
+        print("📖 History")
+
+    if command == "❌ Exit":
+        questionary.print("Leaving MARKET LAB ", style="fg:red")
         break
 
         
