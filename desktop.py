@@ -3,100 +3,187 @@ import event as ev
 import stat_making as sm
 import applications as app
 import sqlite3
+import data_extraction as de
+from datetime import *
+import questionary 
+
+start = datetime(2017, 8, 17)             # limites temporelles de l'exctraction des donnés 
+timestamp = int(start.timestamp() * 1000)
+erase = "\033[F\033[K"
 
 function_dict = {
-    "sma" : mf.sma,
-    "ema" : mf.ema,
-    "atr" : mf.atr,
-    "rsi" : mf.rsi,
-    "vwma" : mf.vwma,
-    "amplitude" : mf.amplitude
-
+    "sma" : (mf.sma, 1),
+    "ema" : (mf.ema, 1),
+    "atr" : (mf.atr, 1),
+    "rsi" : (mf.rsi, 2),
+    "vwma" : (mf.vwma, 2),
+    "amplitude" : (mf.amplitude, 2)
 }
+
+function_list = list(function_dict.keys())
 
 values_list = []
 
+print(" ")
+print(" ")
 
-symbol = input("Symbol : ")
-interval = input("Interval :")
+questionary.print("-- MARKET LAB --", style="fg:pink")
 
-symbol = symbol.upper() + "USDT"
+def data_base():
 
-conn = sqlite3.connect(f"data_{symbol}_{interval}")
+    symbol = input("Symbol : ")
+    interval = input("Interval : ")
+    source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"]).ask()
 
-cursor = conn.cursor()
+    print(erase, end="")
+    print(erase, end="")
+    print(erase, end="")    
 
-command = input("Command : ")
+    symbol = symbol.upper() + "USDT"
+
+    conn = sqlite3.connect(f"data_{symbol}_{interval}_{source}")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS candles(
+
+        open_time INTEGER PRIMARY KEY,
+
+        open REAL,
+
+        high REAL,
+        low REAL,
+
+        close REAL,
+
+        volume REAL, 
+
+        close_time REAL,
+        
+        vwema,
+        vwema_savgol,
+
+        quote_asset_vol REAL, 
+
+        number_of_trades REAL,
+
+        taker_buy_base_asset_volume REAL,
+        taker_buy_quote_asset_volume REAL,
+
+        statut REAL
+
+    )
+    """)
+
+    print("")
+    questionary.print(f"Working on {symbol} {interval} {source}", style="fg:yellow") 
+    print("")
+
+    conn.commit()
+
+    return conn, cursor, source, symbol, interval
 
 
+conn, cursor, source, symbol, interval = data_base()
 
 
-if command == "cursor" :
+while True :
 
-    new_database = ("Enter in :")
+    command = questionary.select("Actions : ", 
+                                choices = ["Change or Create a DataBase",
+                                "Download Data",
+                                "Calculate Indicators",
+                                "Calculate Stats",
+                                "Plot",
+                                "Delete Column", 
+                                "Exit"]).ask()
 
-    cursor.commit()
-    conn.close()
+    print(erase)
 
-    conn = sqlite3.connect(new_database)
-    cursor = conn.cursor
+    if command == "Change or Creat DataBase" :
 
+        data_base()
 
-if command == "indicator" :
+        cursor.commit()
+        conn.close()
 
-    name = input("Name : ")
+    if command == "Download Data":
 
-    after_name = input("Adding an After Name ? : ")
+        if source == "Binance":
+            de.extraction_binance(cursor, symbol, interval, timestamp)
+            conn.commit()
 
-    try :
+            print("Data Downloaded !")
+
+        if source == "Hyperliquid":
+            de.extraction_hyperliquid(cursor, symbol, interval, timestamp)
+            conn.commit()
+
+            print("Data Downloaded !")
+
+    if command == "Calculate Indicators" :
+
+        name = input("Name : ")
+        after_name = questionary.select("Adding an After Name ? : ",
+                                        ["False", "True"]).ask()
         after_name = bool(after_name)
 
-    except ValueError:
-        print("You must enter a bool value (True or False)")
+        print(erase, end="")
+
+        function_ = questionary.select("Select a function :", choices = function_list).ask()
+
+        function_ = function_dict[function_]
 
 
-    function_ = input("Function : ")
+        window = input("Window : ")
 
-    if (function_ is function_dict) == False  :
-        print(f"{function_} does not exist in the function dictionary. Code and add it in the function dictionnary to use it.")
-        function_ = input("Function : ")
+        print(erase, end="")
 
-    else: 
-        function = function_dict[function]
+        try:
+            window = int(window)
 
-
-    window = input("Window :")
-
-    try:
-        window = int(window)
-
-    except ValueError:
-        print("You must enter an inter greater than 0")
+        except ValueError:
+            print("You must enter an inter greater than 0")
 
 
-    paramters = []
-    while True :
+        parameters = []
 
-        new_paramters = input("Parameters : ")
+        cursor.execute("""PRAGMA table_info(candles)""")
+        existing_parameters = [row[1] for row in cursor.fetchall()]
 
-        if new_paramters in values_list :
-            paramters += new_paramters
-            continue
-
-        else :
-            print("This parameter does not exist. Compute it to use it. Command 'parameters' to see all parameters.")
-        if new_paramters is None :
-            break
-
-    app.general_application(cursor, "name", after_name, function, window, paramters)
+        for i in range(function_[1]):
+            parameters.append(questionary.autocomplete(f"Select parameter {i+1} : ", choices=existing_parameters).ask())
 
 
-if command == "plot":
+        app.general_application(cursor, name, after_name, function_[0], window, parameters)
 
-    after_command = input("Plot command : ")
+    if command == "plot":
 
-    if after_command == "stat":
-        after_command = input("number of var : ")
+        after_command = input("Plot command : ")
 
+        if after_command == "stat":
+            after_command = input("number of var : ")
 
-    
+    if command == "Delete Column":
+
+        cursor.execute("""PRAGMA table_info(candles)""")
+        existing_parameters = [row[1] for row in cursor.fetchall()]
+
+        parameters = questionary.select(f"Select parameter : ", choices=existing_parameters).ask()
+
+        yes_no = questionary.select(f"Deleting {parameters} ? For real ?", ["No", "Yes"]).ask()
+
+        if yes_no == "Yes":
+            cursor.execute(f"""
+                ALTER TABLE candles
+                DROP COLUMN {parameters}""")
+
+        else:
+            print(erase, end="")
+
+    if command == "Exit":
+        print("Leaving MARKET LAB ")
+        break
+
+        
+
