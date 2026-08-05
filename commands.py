@@ -3,6 +3,44 @@ import data_extraction as de
 import sqlite3
 import applications as app
 
+
+HYPERLIQUID_TIMEFRAMES = [
+    "1m",
+    "3m",
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "2h",
+    "4h",
+    "8h",
+    "12h",
+    "1d",
+    "3d",
+    "1w",
+    "1M",
+]
+
+BINANCE_TIMEFRAMES = [
+    "1s",
+    "1m",
+    "3m",
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "2h",
+    "4h",
+    "6h",
+    "8h",
+    "12h",
+    "1d",
+    "3d",
+    "1w",
+    "1M",
+]
+
+
 def skip(erase):
     res = questionary.select("Close ?", choices=["Yes"]).ask()
     if res == "Yes":
@@ -15,9 +53,13 @@ def yes_no(question):
 def data_base(erase):
 
     symbol = input("Symbol : ")
-    interval = input("Interval : ")
     source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"]).ask()
 
+    if source == "Binance":
+        interval = questionary.autocomplete("Timeframe : ", choices=BINANCE_TIMEFRAMES).ask()
+    else:
+        interval = questionary.autocomplete("Timeframe : ", choices=HYPERLIQUID_TIMEFRAMES).ask()
+    
     print(erase, end="")
     print(erase, end="")
     print(erase, end="")    
@@ -131,7 +173,7 @@ def calculate_indic(erase, function_dict, function_list, cursor, history, symbol
         print(erase, end="")
 
 
-def delete_col(erase, cursor):
+def delete_col(erase, cursor, history, symbol, interval, source):
 
     print(erase, end="")
     print("🗑️  Delete Column")
@@ -139,7 +181,7 @@ def delete_col(erase, cursor):
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_parameters = [row[1] for row in cursor.fetchall()]
 
-    parameters = questionary.select(f"Select parameter : ", choices=existing_parameters+["Exit"]).ask()
+    parameters = questionary.autocomplete(f"Select parameter : ", choices=existing_parameters+["Exit"]).ask()
 
     if parameters == "Exit":
         print(erase, end="")
@@ -152,6 +194,7 @@ def delete_col(erase, cursor):
             cursor.execute(f"""
                 ALTER TABLE candles
                 DROP COLUMN {parameters}""")
+            history.append(f"{parameters} Deleted In {symbol} {interval} From {source}")
             print(erase, end="")
             print(erase, end="")
             print(erase, end="")
@@ -160,4 +203,21 @@ def delete_col(erase, cursor):
             print(erase, end="")
             print(erase, end="")
             print(erase, end="")
+
+
+
+def action_history(erase, history):
+
+    print(erase, end="")
+    print("📖 History")
+
+    if len(history) == 0:
+        print("The Action History is empty")
+        skip(erase)
+        print(erase, end="")
+    else:
+        print(history)
+        skip(erase)
+        print(erase, end="")
+
 

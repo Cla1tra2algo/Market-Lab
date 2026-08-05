@@ -20,7 +20,6 @@ function_dict = {
     "vwma" : (mf.vwma, 2),
     "amplitude" : (mf.amplitude, 2)
 }
-
 function_list = list(function_dict.keys())
 
 
@@ -51,6 +50,8 @@ while True :
                                 "📉 Plot",
                                 "🗑️  Delete Column", 
                                 "📘 History",
+                                "Settings",
+                                "Take a Look"
                                 "❌ Exit"]).ask()
 
     print(erase)
@@ -89,18 +90,10 @@ while True :
             after_command = input("number of var : ")
 
     if command == "🗑️  Delete Column":
-        delete_col(erase, cursor)
+        delete_col(erase, cursor, history, symbol, interval, source)
         
-
     if command == "📘 History":
-        print(erase, end="")
-        print("📖 History")
-        if len(history) == 0:
-            print("The Action History is empty")
-            skip()
-        else:
-            print(history)
-            skip()
+        action_history(erase, history)
 
     if command == "❌ Exit":
         rep = yes_no("Do you really wanna leave MARKET LAB ?")
@@ -112,4 +105,4 @@ while True :
         else:
             print(erase, end="")
 
- 
+
