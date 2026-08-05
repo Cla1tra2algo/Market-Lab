@@ -11,6 +11,13 @@ from commands import *
 start = datetime(2017, 8, 17)             # limites temporelles de l'exctraction des donnés 
 timestamp = int(start.timestamp() * 1000)
 erase = "\033[F\033[K"
+pointer = "▶︎"
+logo = """ 
+    ╔╦╗╔═╗╦═╗╦╔═╔═╗╔╦╦══════════╗
+    ║║║╠═╣╠╦╝╠╩╗║╣  ║  ╦  ╔═╗╔╗       
+    ╩ ╩╩ ╩╩╚═╩ ╩╚═╝ ╩  ║  ╠═╣╠╩╗   
+  ╚════════════════════╩═╝╩ ╩╚═╝    """
+
 
 function_dict = {
     "sma" : (mf.sma, 1),
@@ -22,20 +29,14 @@ function_dict = {
 }
 function_list = list(function_dict.keys())
 
-
 values_list = []
 
 print(" ")
-print(" ")
-questionary.print("I--I MARKET LAB I--I", style="fg:pink")
+questionary.print(logo, style="fg:pink")
 print("")
 
 
-conn, cursor, source, symbol, interval = data_base(erase)
-
-print("")
-questionary.print(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
-print("")
+conn, cursor, source, symbol, interval = data_base(erase, pointer, logo)
 
 history = []
 
@@ -50,28 +51,38 @@ while True :
                                 "📉 Plot",
                                 "🗑️  Delete Column", 
                                 "📘 History",
-                                "Settings",
-                                "Take a Look"
-                                "❌ Exit"]).ask()
+                                "⚙️  Settings",
+                                "👀 Take a Look",
+                                "🚪 Exit"], pointer="▶︎").ask()
 
     print(erase)
 
     if command == "📁 Change or Create a DataBase":
 
-        data_base()
+        conn.commit()
+        conn.close()
+
+        data_base(erase, pointer, logo)
 
         print("")
-        questionary.prin(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
+        questionary.print(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
 
-        cursor.commit()
-        conn.close()
+       
 
     if command == "💾 Download Data":
         download_data(cursor, symbol, interval, source, timestamp, erase, conn, history)
+        res = skip(erase, pointer)
+        turn_page(logo, symbol, interval, source)
+
 
     if command == "📈 Calculate Indicators":
-        calculate_indic(erase, function_dict, function_list, cursor, history, symbol, interval)
-    
+        while True:
+            calculate_indic(erase, function_dict, function_list, cursor, history, symbol, interval, pointer=pointer)
+            res = skip(erase, pointer)
+            if res == "Yes":
+                break
+        turn_page(logo, symbol, interval, source)
+
     if command == "📊 Calculate Stats":
         command = questionary.select("Number of Variables : ",
                                      choices=[
@@ -90,13 +101,25 @@ while True :
             after_command = input("number of var : ")
 
     if command == "🗑️  Delete Column":
-        delete_col(erase, cursor, history, symbol, interval, source)
-        
-    if command == "📘 History":
-        action_history(erase, history)
+        while True:
+            delete_col(erase, cursor, history, symbol, interval, source, pointer)
+            conn.commit()
+            res = skip(erase, pointer)
+            if res == "Yes":
+                break
+        turn_page(logo, symbol, interval, source)
 
-    if command == "❌ Exit":
-        rep = yes_no("Do you really wanna leave MARKET LAB ?")
+    if command == "📘 History":
+        while True:
+            action_history(erase, history, pointer)
+            res = skip(erase, pointer)
+            if res == "Yes":
+                break
+        turn_page(logo, symbol, interval, source)
+
+
+    if command == "🚪 Exit":
+        rep = yes_no("Do you really wanna leave MARKET LAB ?", pointer)
 
         if rep == "Yes":
             questionary.print("Leaving MARKET LAB", style="fg:red")

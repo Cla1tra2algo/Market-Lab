@@ -41,19 +41,48 @@ BINANCE_TIMEFRAMES = [
 ]
 
 
-def skip(erase):
-    res = questionary.select("Close ?", choices=["Yes"]).ask()
+logo = """ 
+    ╔╦╗╔═╗╦═╗╦╔═╔═╗╔╦╦═══════════╗
+    ║║║╠═╣╠╦╝╠╩╗║╣  ║   ╦  ╔═╗╔╗         
+    ╩ ╩╩ ╩╩╚═╩ ╩╚═╝ ╩   ║  ╠═╣╠╩╗   
+  ╚═════════════════════╩═╝╩ ╩╚═╝    """
+
+
+def turn_page(logo, symbol, interval, source):
+    print("\033[0;1H", end="")
+    print("\033[J", end="")
+    print("")
+    questionary.print(logo, style="fg:pink")
+    print("")
+    questionary.print(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
+    print("")
+
+def skip(erase, pointer):
+    res = questionary.select("Go back to Menu ?", choices=["Yes", "Continue"], pointer=pointer).ask()
     if res == "Yes":
         print(erase, end="")
+        return res
+    else:
+        return res
 
-def yes_no(question):
-    rep = questionary.select(question, ["No", "Yes"]).ask()
+def yes_no(question, pointer):
+    rep = questionary.select(question, ["No", "Yes"], pointer=pointer).ask()
     return rep
 
-def data_base(erase):
+def data_base(erase, pointer, logo):
 
-    symbol = input("Symbol : ")
-    source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"]).ask()
+    while True :
+        symbol = input("Symbol : ")
+
+        if symbol == "":
+            print(erase, end="")
+            print("")
+            questionary.print("❌ You must enter a symbol (ex: BTC)", style="fg:red")
+            continue
+        else:
+            break
+            
+    source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"], pointer=pointer).ask()
 
     if source == "Binance":
         interval = questionary.autocomplete("Timeframe : ", choices=BINANCE_TIMEFRAMES).ask()
@@ -101,13 +130,15 @@ def data_base(erase):
     """)
 
     conn.commit()
+    skip(erase, pointer)
+    turn_page(logo, symbol, interval, source)
 
     return conn, cursor, source, symbol, interval
 
-
-
 def download_data(cursor, symbol, interval, source, timestamp, erase, conn, history):
-    print(erase, end="")
+
+    print(erase)
+    
     print("💾 Download Data")
     
     if source == "Binance":
@@ -124,35 +155,62 @@ def download_data(cursor, symbol, interval, source, timestamp, erase, conn, hist
     
         history.append(f"{symbol} {interval} Downloaded From {source}")
 
-        skip()
-        print(erase, end="")
-        print(erase, end="")
-        print(erase, end="")
-        print(erase, end="")
-
-
-def calculate_indic(erase, function_dict, function_list, cursor, history, symbol, interval):
+        
+def calculate_indic(erase, function_dict, function_list, cursor, history, symbol, interval, pointer):
 
     print(erase, end="")
     print("📈 Calculate Indicators")
 
-    name = input("Name : ")
+    while True :
+        name = input("Name : ")
+        if name == "":
+            print(erase, end="")
+            print("")
+            questionary.print("You Must Enter a Name", style="fg:red")
+
+        else: 
+            break
+
     after_name = questionary.select("Adding an After Name ? : ",
-                                        ["False", "True"]).ask()
-    after_name = bool(after_name)
+                                        ["No", "Yes"], pointer=pointer).ask()
 
-   
+    while True : 
+        function_ = questionary.autocomplete("Select a function :", choices=function_list).ask()
 
-    function_ = questionary.autocomplete("Select a function :", choices=function_list).ask()
-    function_ = function_dict[function_]
+        if function_ == "":
+            print(erase, end="")
+            print("")
+            questionary.print("You Must Select a function", style="fg:red")
 
-    window = input("Window : ")
+        elif function_ in function_list:
+            function_ = function_dict[function_]
+            break
+        else: 
+            print(erase, end="")
+            print("")
+            questionary.print("This function does not exists. Create and add it in the function dict.", style="fg:red")
+    
 
-    try:
-        window = int(window)
+    while True :
+        while True:
+            window = input("Window : ")
 
-    except ValueError:
-        print("You must enter an inter greater than 0")
+            try:
+                window = int(window)
+                break
+
+            except ValueError:
+                print(erase, end="")
+                print("")
+                questionary.print("You must enter an integer greater than 0", style="fg:red")
+
+        if window <= 0:
+            print(erase, end="")
+            print("")
+            questionary.print("You must enter an integer greater than 0", style="fg:red")
+
+        else:
+            break
 
 
     parameters = []
@@ -167,13 +225,8 @@ def calculate_indic(erase, function_dict, function_list, cursor, history, symbol
 
     history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
-    skip(erase)
 
-    for i in range(6):
-        print(erase, end="")
-
-
-def delete_col(erase, cursor, history, symbol, interval, source):
+def delete_col(erase, cursor, history, symbol, interval, source, pointer):
 
     print(erase, end="")
     print("🗑️  Delete Column")
@@ -181,43 +234,40 @@ def delete_col(erase, cursor, history, symbol, interval, source):
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_parameters = [row[1] for row in cursor.fetchall()]
 
-    parameters = questionary.autocomplete(f"Select parameter : ", choices=existing_parameters+["Exit"]).ask()
+    parameters = questionary.autocomplete(f"Select parameter : ", choices=existing_parameters).ask()
 
     if parameters == "Exit":
         print(erase, end="")
         print(erase, end="")
 
     else:
-        rep = yes_no(f"Deleting {parameters} ? For real 🤨 ?")
+        rep = yes_no(f"Deleting {parameters} ? For real 🤨 ?", pointer)
 
         if rep == "Yes":
             cursor.execute(f"""
                 ALTER TABLE candles
                 DROP COLUMN {parameters}""")
             history.append(f"{parameters} Deleted In {symbol} {interval} From {source}")
-            print(erase, end="")
-            print(erase, end="")
-            print(erase, end="")
 
-        else:
-            print(erase, end="")
-            print(erase, end="")
-            print(erase, end="")
-
-
-
-def action_history(erase, history):
+            
+def action_history(erase, history, pointer):
 
     print(erase, end="")
     print("📖 History")
 
     if len(history) == 0:
         print("The Action History is empty")
-        skip(erase)
-        print(erase, end="")
+        
     else:
-        print(history)
-        skip(erase)
-        print(erase, end="")
+        for i in range(len(history)):
+            print(history[i])
+    
+def take_look(erase, history, pointer, logo, symbol, interval, source, function_dict, indicator_dict):
+    look = questionary.select("What do you wanna look ?", ["Indicators Dict", "Function Dict"], pointer=pointer).ask()
+    print(erase, end="")
+    if look == "Indicators Dict":
+        copy = questionary.select("Indicators Dict", choices=indicator_dict, pointer=pointer)
+
+
 
 

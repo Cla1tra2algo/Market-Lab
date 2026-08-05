@@ -67,20 +67,16 @@ def general_application(cursor, name, after_name, function, window, parameters):
     columns = [c[1] for c in cursor.fetchall()]
 
 
-    if after_name is True :
-        after_name = ""
-
+    if after_name == "Yes":
         for i in range(len(parameters)):
-            after_name += f"_{parameters[i]}"
+            name += f"_{parameters[i]}"
 
-    else:
-        after_name = ""
+        name += after_name
+
 
     if window > 1:
-        name = name + after_name + "_" + str(window)
+        name = name + "_" + str(window)
 
-    else:
-       name = name + after_name  
 
     if not mf.column_exists(cursor, "candles", name):
 
