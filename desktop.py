@@ -7,10 +7,11 @@ import data_extraction as de
 from datetime import *
 import questionary 
 from commands import *
+from questionary import *
+from rich.console import Console
 
 start = datetime(2017, 8, 17)             # limites temporelles de l'exctraction des donnés 
 timestamp = int(start.timestamp() * 1000)
-erase = "\033[F\033[K"
 pointer = "▶︎"
 logo = """ 
     ╔╦╗╔═╗╦═╗╦╔═╔═╗╔╦╦══════════╗
@@ -20,12 +21,13 @@ logo = """
 
 copy = None
 
-
 logo_color = "fg:pink"
 questions_color = "fg:blue"
 answers_color = "fg:orange"
 err_color = "fg:red"
-activ_file = "fg:yellow"
+active_file = "fg:yellow"
+
+style = questionary.Style([("question", questions_color), ("answer", questions_color)])
 
 
 function_dict = {
@@ -40,12 +42,12 @@ function_list = list(function_dict.keys())
 
 values_list = []
 
-print(" ")
+print("")
 questionary.print(logo, style=logo_color)
 print("")
 
 
-conn, cursor, source, symbol, interval = data_base(erase, pointer, logo)
+conn, cursor, source, symbol, interval = data_base(pointer, logo, config=style, err_color=err_color, active_color=active_file, logo_color=logo_color)
 
 history = []
 
@@ -64,30 +66,30 @@ while True :
                                 "👀 Take a Look",
                                 "🚪 Exit"], pointer="▶︎").ask()
 
-    print(erase)
+    print(""*80, end="\r")
 
     if command == "📁 Change or Create a DataBase":
 
         conn.commit()
         conn.close()
 
-        data_base(erase, pointer, logo)
+        data_base(pointer, logo, err_color=err_color, config=style, color=logo_color)
 
         print("")
         questionary.print(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
 
 
     if command == "💾 Download Data":
-        download_data(cursor, symbol, interval, source, timestamp, erase, conn, history)
-        res = skip(erase, pointer)
+        download_data(cursor, symbol, interval, source, timestamp, conn, history)
+        res = skip(pointer, config=style)
         turn_page(logo, symbol, interval, source)
 
 
     if command == "📈 Calculate Indicators":
         while True:
-            calculate_indic(erase, function_dict, function_list, cursor, history, symbol, interval, pointer=pointer)
-            res = skip(erase, pointer)
-            turn_page(logo, symbol, interval, source)
+            calculate_indic(function_dict, function_list, cursor, history, symbol, interval, pointer=pointer, err_color=err_color, config=style)
+            res = skip(pointer, config=style)
+            turn_page(logo, symbol, interval, source, logo_color=logo_color, active_color=active_file)
             if res == "Yes":
                 break
         
@@ -100,7 +102,7 @@ while True :
 
     if command == "📉 Plot":
 
-        print(erase, end="")
+        print(""*80, end="\r")
         print("📉 Plot")
 
         after_command = input("Plot command : ")
@@ -110,39 +112,38 @@ while True :
 
     if command == "🗑️  Delete Column":
         while True:
-            delete_col(erase, cursor, history, symbol, interval, source, pointer)
+            delete_col(cursor, history, symbol, interval, source, pointer, config=style)
             conn.commit()
-            res = skip(erase, pointer)
-            turn_page(logo, symbol, interval, source)
+            res = skip(pointer, config=style)
+            turn_page(logo, symbol, interval, source, logo_color=logo_color, active_color=active_file)
             if res == "Yes":
                 break
         
     if command == "📘 History":
         while True:
-            action_history(erase, history, pointer)
-            res = skip(erase, pointer)
-            turn_page(logo, symbol, interval, source)
+            action_history(history)
+            res = skip(pointer, config=style)
+            turn_page(logo, symbol, interval, source, logo_color=logo_color, active_color=active_file)
             if res == "Yes":
                 break
         
     if command == "👀 Take a Look":
         while True:
-            res = take_look()
+            res = take_look(history, pointer, function_dict, cursor, config=style)
             if res != None:
                 copy = res
-            turn_page(logo, symbol, interval, source)
+            turn_page(logo, symbol, interval, source, log_color=logo_color, active_color=active_file)
+            skip(pointer, config=style)
             break
 
-
-
     if command == "🚪 Exit":
-        rep = yes_no("Do you really wanna leave MARKET LAB ?", pointer)
+        rep = yes_no("Do you really wanna leave MARKET LAB ?", pointer, config=style)
 
         if rep == "Yes":
             questionary.print("Leaving MARKET LAB", style="fg:red")
             break
 
         else:
-            print(erase, end="")
+            print(""*80, end="\r")
 
 
