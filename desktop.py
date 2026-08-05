@@ -18,6 +18,15 @@ logo = """
     ╩ ╩╩ ╩╩╚═╩ ╩╚═╝ ╩  ║  ╠═╣╠╩╗   
   ╚════════════════════╩═╝╩ ╩╚═╝    """
 
+copy = None
+
+
+logo_color = "fg:pink"
+questions_color = "fg:blue"
+answers_color = "fg:orange"
+err_color = "fg:red"
+activ_file = "fg:yellow"
+
 
 function_dict = {
     "sma" : (mf.sma, 1),
@@ -32,7 +41,7 @@ function_list = list(function_dict.keys())
 values_list = []
 
 print(" ")
-questionary.print(logo, style="fg:pink")
+questionary.print(logo, style=logo_color)
 print("")
 
 
@@ -67,7 +76,6 @@ while True :
         print("")
         questionary.print(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
 
-       
 
     if command == "💾 Download Data":
         download_data(cursor, symbol, interval, source, timestamp, erase, conn, history)
@@ -79,10 +87,10 @@ while True :
         while True:
             calculate_indic(erase, function_dict, function_list, cursor, history, symbol, interval, pointer=pointer)
             res = skip(erase, pointer)
+            turn_page(logo, symbol, interval, source)
             if res == "Yes":
                 break
-        turn_page(logo, symbol, interval, source)
-
+        
     if command == "📊 Calculate Stats":
         command = questionary.select("Number of Variables : ",
                                      choices=[
@@ -105,17 +113,26 @@ while True :
             delete_col(erase, cursor, history, symbol, interval, source, pointer)
             conn.commit()
             res = skip(erase, pointer)
+            turn_page(logo, symbol, interval, source)
             if res == "Yes":
                 break
-        turn_page(logo, symbol, interval, source)
-
+        
     if command == "📘 History":
         while True:
             action_history(erase, history, pointer)
             res = skip(erase, pointer)
+            turn_page(logo, symbol, interval, source)
             if res == "Yes":
                 break
-        turn_page(logo, symbol, interval, source)
+        
+    if command == "👀 Take a Look":
+        while True:
+            res = take_look()
+            if res != None:
+                copy = res
+            turn_page(logo, symbol, interval, source)
+            break
+
 
 
     if command == "🚪 Exit":

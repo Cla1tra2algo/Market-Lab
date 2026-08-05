@@ -84,11 +84,20 @@ def data_base(erase, pointer, logo):
             
     source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"], pointer=pointer).ask()
 
-    if source == "Binance":
-        interval = questionary.autocomplete("Timeframe : ", choices=BINANCE_TIMEFRAMES).ask()
-    else:
-        interval = questionary.autocomplete("Timeframe : ", choices=HYPERLIQUID_TIMEFRAMES).ask()
-    
+    while True :
+        if source == "Binance":
+            interval = questionary.autocomplete("Timeframe : ", choices=BINANCE_TIMEFRAMES).ask()
+        else:
+            interval = questionary.autocomplete("Timeframe : ", choices=HYPERLIQUID_TIMEFRAMES).ask()
+
+        if interval in BINANCE_TIMEFRAMES or interval in HYPERLIQUID_TIMEFRAMES:
+            break
+
+        else:
+            print(erase, end="")
+            print("")
+            questionary.print("You must enter a Timeframe present in the Timeframe list", style="fg:red")
+        
     print(erase, end="")
     print(erase, end="")
     print(erase, end="")    
@@ -160,6 +169,7 @@ def calculate_indic(erase, function_dict, function_list, cursor, history, symbol
 
     print(erase, end="")
     print("📈 Calculate Indicators")
+    print("")
 
     while True :
         name = input("Name : ")
@@ -230,6 +240,7 @@ def delete_col(erase, cursor, history, symbol, interval, source, pointer):
 
     print(erase, end="")
     print("🗑️  Delete Column")
+    print("")
 
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_parameters = [row[1] for row in cursor.fetchall()]
@@ -254,6 +265,7 @@ def action_history(erase, history, pointer):
 
     print(erase, end="")
     print("📖 History")
+    print("")
 
     if len(history) == 0:
         print("The Action History is empty")
@@ -262,12 +274,65 @@ def action_history(erase, history, pointer):
         for i in range(len(history)):
             print(history[i])
     
-def take_look(erase, history, pointer, logo, symbol, interval, source, function_dict, indicator_dict):
-    look = questionary.select("What do you wanna look ?", ["Indicators Dict", "Function Dict"], pointer=pointer).ask()
+def take_look(erase, history, pointer, function_dict, indicator_dict, cursor):
     print(erase, end="")
+    print("👀 Take a Look")
+    print("")
+
+    look = questionary.select("What do you wanna look ?", ["Indicators Dict", "Function Dict"], pointer=pointer).ask()
+    
     if look == "Indicators Dict":
-        copy = questionary.select("Indicators Dict", choices=indicator_dict, pointer=pointer)
+        copy = questionary.select("Indicators Dict", choices=indicator_dict, pointer=pointer).ask()
+        print(copy)
+        nb = cursor.execute(f"""
+                                SELECT COUNT(DISTINCT {copy})
+                                FROM candles
+                                WHERE {copy} IS NOT NULL""").fetchone()[0]
 
+    questionary.print(f"Calculated over {nb} candles", style="fg:lightblue")
 
+    if look == "Function Dict":
+        copy = questionary.select("Function Dict", choices=function_dict, pointer=pointer).ask()
+        print(copy)
 
+    res = questionary.select("What do you wanna do ?", choices=["Go back to '👀 Take a Look'", f"Copy '{copy}' and go back to '👀 Take a Look'"]).ask()
+    if res == f"Copy '{copy}' and go back to '👀 Take a Look'":
+        history.append(f"{copy} Copied")
+        return copy
 
+    else:
+        return None
+
+def settings(erase, color):
+    color_list = [
+            "black",
+            "red",
+            "green",
+            "yellow",
+            "blue",
+            "magenta",
+            "cyan",
+            "white",
+            "brightblack",
+            "brightred",
+            "brightgreen",
+            "brightyellow",
+            "brightblue",
+            "brightmagenta",
+            "brightcyan",
+            "brightwhite"
+            ]
+    
+    print(erase, end="")
+    print("⚙️ Settings")
+    print("")
+
+    set = questionary.select("What do you wanna set ?", choices=["Colors", "Pointer"])
+
+    if set == "Color":
+        set = questionary.select("Which color do you wanna Set ?", choices=["Color of the Logo", 
+                                                                            "Color of Questions", 
+                                                                            "Color of Answers", 
+                                                                            "Color of Errors", 
+                                                                            "Color of Active Symbol"]).ask()
+        
