@@ -40,6 +40,12 @@ function_dict = {
     "amplitude" : (mf.amplitude, 2),
     "relative" : (mf.amplitude, 2)
 }
+
+event_dict = {
+    "cross" : (ev.cross, 2, ["sma"])
+}
+
+
 function_list = list(function_dict.keys())
 
 values_list = []
@@ -61,6 +67,7 @@ while True :
                                 "💾 Download Data",
                                 "📈 Calculate Indicators",
                                 "📊 Calculate Stats",
+                                "🎉 Calculate Events",
                                 "✏️  Plot",
                                 "🗑️  Delete Column", 
                                 "📘 History",
@@ -113,6 +120,12 @@ while True :
                                          "2 variables (heatmap)"
                                      ]).ask()
 
+
+    if command == "🎉 Calculate Events":
+
+        calculate_event(event_dict, pointer, cursor)
+
+        
     if command == "✏️  Plot":
 
         while True : 
@@ -125,6 +138,7 @@ while True :
             turn_page(logo, symbol, interval, source, logo_color, active_color=active_file)
             if res == "Yes":
                 break
+            
 
         
     if command == "🗑️  Delete Column":

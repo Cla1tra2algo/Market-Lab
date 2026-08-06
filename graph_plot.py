@@ -33,15 +33,25 @@ def plot(cursor, values, status):
 
 
     if status != None :
-        nb_status = len(status)
-        for n in range(nb_status):
-            for i in range(len(open_times)):
-                if values_list[0][i] is None :
-                    continue
-                if status[n] > 0:
-                    plt.scatter(x=i, y= values_list[0][i]+ values_list[0][i]*0.1, marker="^", c="red", s=50, alpha=0.5)
-                if status[n] < 0:
-                    plt.scatter(x=i, y= values_list[0][i]- values_list[0][i]*0.1, marker="^", c="blue", s=50, alpha=0.5)
+
+  
+        for i in range(len(open_times)):
+
+            cursor.execute(f"""
+                    SELECT {status}
+                    FROM status
+                    ORDER BY open_time
+                    """)
+
+            rows = cursor.fetchall()
+            status_list = list([row[0] for row in rows])
+
+            if status_list[i] is None :
+                continue
+            if status_list[i] > 0:
+                plt.scatter(x=i, y=values_list[0][i]+ values_list[0][i]*0.1, marker="^", c="red", s=50, alpha=0.5)
+            if status_list[i] < 0:
+                plt.scatter(x=i, y=values_list[0][i]- values_list[0][i]*0.1, marker="^", c="blue", s=50, alpha=0.5)
 
     for i in range(nb):
         plt.plot(np.array(values_list[i]), label=values[i])

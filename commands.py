@@ -5,6 +5,7 @@ import applications as app
 from   questionary import *
 from rich.console import Console
 import graph_plot as gp
+import event as ev
 
 
 
@@ -132,10 +133,10 @@ def data_base(pointer, logo, config, err_color):
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS status(
-        open_time INTERGER PRIMARY KEY,
-        cross REAL
-        under_over)
+        open_time INTERGER PRIMARY KEY
+        )
 """)
+
 
     conn.commit()
     
@@ -236,6 +237,36 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
     conn.commit()
     history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
+
+def calculate_event(event_dict, pointer, cursor):
+
+    print(""*80, end="\r")
+    print("🎉 Calculate Events")
+    print("")
+
+    event_list = list(event_dict.keys())
+    questionary.print(f"{len(event_list)}, {type(event_list[0])}")
+
+    choice = questionary.select("Select an event :", choices=event_list, pointer=pointer).ask()
+
+    event = event_dict[choice]
+    event_function = event[0]
+    questionary.print(f"{type(event_function)}")
+
+    nb_para = event[1]
+
+    cursor.execute("""PRAGMA table_info(candles)""")
+    existing_parameters = [row[1] for row in cursor.fetchall()]
+    data = []
+
+    for i in range(nb_para):
+        data.append(questionary.autocomplete(f"Select Parameter {i+1} : ", choices=existing_parameters).ask())
+
+    event_function(cursor, data)
+    questionary.print("Event calculated")
+
+
+
 def plot_indic(cursor, err_color, pointer):
 
     print(""*80, end="\r")
@@ -245,6 +276,7 @@ def plot_indic(cursor, err_color, pointer):
     values = []
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_values = [row[1] for row in cursor.fetchall()]
+    #existing_values.remove("open_time")
 
     while True:
         choice = questionary.autocomplete("What Indicator do you want to plot?", 
@@ -262,15 +294,25 @@ def plot_indic(cursor, err_color, pointer):
                 questionary.print(f"Indicators to plot : {values}", style="lightblue")
                 break
 
-    while True:
-        rep = questionary.select("Do you wanna plot a Status ?", choices=["Yes", "No"], pointer=pointer).ask()
-        if rep == "Yes":
-            choice = questionary.autocomplete("What Status do you wanna plot ?")
-            break
-        else:
-            break
+   
+    rep = questionary.select("Do you wanna plot a Status ?", choices=["Yes", "No"], pointer=pointer).ask()
+    if rep == "Yes":
+        cursor.execute("""PRAGMA table_info(status)""")
+        existing_status = [r[1] for r in cursor.fetchall()]
 
-    gp.plot(cursor, values, None)
+        existing_status.remove("open_time")
+
+        choice = questionary.autocomplete("What Status do you wanna plot ?", choices=existing_status).ask()
+        status = choice
+
+    else:
+        status = None
+
+    
+    questionary.print("Ploting ...", style="fg:lightblue")
+
+    gp.plot(cursor, values, status)
+
 
 def delete_col(cursor, history, symbol, interval, source, pointer, config):
 

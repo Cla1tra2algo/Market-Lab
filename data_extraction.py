@@ -56,6 +56,9 @@ def extraction_binance(cursor, symbol, interval, timestamp):
                 values
                 )
 
+            cursor.execute(
+                "INSERT INTO status (open_time) VALUES (?)", (open_time,))
+
         print(f"Candles collected : {count*1000}", end="\r")
         
         last = data[-1]

@@ -84,16 +84,18 @@ def cross(cursor, data):
 
     results = list(zip(status, open_times))
 
-    cursor.execute("""
-        ALTER TABLE candles
-        ADD COLUMN status_cross
+    name = f"cross_{data[0]}_{data[1]}"
+
+    cursor.execute(f"""
+        ALTER TABLE status
+        ADD COLUMN {name}
 """)
 
     cursor.connection.commit()
 
-    cursor.executemany("""
-        UPDATE candles
-        SET status_cross = ?
+    cursor.executemany(f"""
+        UPDATE status
+        SET {name} = ?
         WHERE open_time = ?
     """, results)
 
@@ -130,12 +132,12 @@ def over_under(cursor, data):
 
     if mf.column_exists(cursor, "candles", "status_under_over") is False:
         cursor.execute("""
-            ALTER TABLE candles
+            ALTER TABLE status
             ADD COLUMN status_under_over
         """)
 
     cursor.executemany("""
-        UPDATE candles
+        UPDATE status
         SET status_under_over = ?
         WHERE open_time = ?
     """, results)
