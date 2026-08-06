@@ -236,6 +236,41 @@ def calculate_indic(function_dict, function_list, cursor, history, symbol, inter
 
     history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
+
+
+def plot_indic(cursor, err_color, pointer):
+
+    print(""*80, end="\r")
+    print("Plot")
+    print(" ")
+
+    values = []
+    cursor.execute("""PRAGMA table_info(candles)""")
+    existing_values = [row[1] for row in cursor.fetchall()]
+
+    while True:
+        choice = questionary.autocomplete("What Indicator do you want to plot?", 
+                                          choices=existing_values,
+                                          pointer=pointer).ask()
+        if not choice in existing_values:
+            questionary.print("You must enter an Indicator present in the Indicator list", 
+                              style=err_color)
+            values.append(choice)
+        else:
+            rep = questionary.select("Do you wanna plot another Indicator ?", 
+                                     ["Yes", "No"],
+                                     pointer=pointer).ask()
+            if rep == "No":
+                break
+
+    while True:
+        rep = questionary.select("Do you wanna plot a Status ?", choices=["Yes", "No"]).ask()
+        if rep == "Yes":
+            choice = questionary.autocomplete("What Status do you wanna plot ?")
+        else:
+            break
+
+
 def delete_col(cursor, history, symbol, interval, source, pointer, config):
 
     print(""*80, end="\r")
@@ -262,7 +297,7 @@ def delete_col(cursor, history, symbol, interval, source, pointer, config):
          
 def action_history(history):
 
-    print(" "*80, end="\r")
+    print(""*80, end="\r")
     print("📖 History")
     print("")
 
@@ -274,7 +309,6 @@ def action_history(history):
         for i in range(len(history)):
             print(history[i])
 
-    
 def take_look(history, pointer, function_dict, cursor, config):
     print(""*80, end="\r")
     print("👀 Take a Look")

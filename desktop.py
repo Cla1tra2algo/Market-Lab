@@ -14,10 +14,13 @@ start = datetime(2017, 8, 17)             # limites temporelles de l'exctraction
 timestamp = int(start.timestamp() * 1000)
 pointer = "▶︎"
 logo = """ 
-    ╔╦╗╔═╗╦═╗╦╔═╔═╗╔╦╦══════════╗
-    ║║║╠═╣╠╦╝╠╩╗║╣  ║  ╦  ╔═╗╔╗       
-    ╩ ╩╩ ╩╩╚═╩ ╩╚═╝ ╩  ║  ╠═╣╠╩╗   
-  ╚════════════════════╩═╝╩ ╩╚═╝    """
+
+    ╔═╦╦╗╔═╗╦═╗╦╔═╔═╗╔╦╦═══════════╗ 
+    ║ ║║║╠═╣╠╦╝╠╩╗║╣  ║  ╦  ╔═╗╔╗  ║   
+    ║ ╩ ╩╩ ╩╩╚═╩ ╩╚═╝ ╩  ║  ╠═╣╠╩╗ ║ 
+    ╚════════════════════╩═╝╩ ╩╚═╩═╝ 
+
+"""
 
 copy = None
 
@@ -73,7 +76,7 @@ while True :
         conn.commit()
         conn.close()
 
-        data_base(pointer, logo, err_color=err_color, config=style, color=logo_color)
+        data_base(pointer, logo, err_color=err_color, config=style, logo_color=logo_color)
 
         print("")
         questionary.print(f"Working on {symbol} {interval} From {source}", style="fg:yellow")
@@ -104,12 +107,11 @@ while True :
 
         print(""*80, end="\r")
         print("📉 Plot")
+        print(" ")
 
-        after_command = input("Plot command : ")
+        plot_indic(cursor, err_color=err_color, pointer=pointer)
 
-        if after_command == "stat":
-            after_command = input("number of var : ")
-
+        
     if command == "🗑️  Delete Column":
         while True:
             delete_col(cursor, history, symbol, interval, source, pointer, config=style)
