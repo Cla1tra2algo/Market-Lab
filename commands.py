@@ -223,7 +223,13 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_parameters = [row[1] for row in cursor.fetchall()]
 
+
+    if type(function_[-1]) is list:
+        print("")
+        questionary.print(f"Recomended parameters : {function_[-1]}", style="fg:blue")
+
     for i in range(function_[1]):
+
         parameters.append(questionary.autocomplete(f"Select parameter {i+1} : ", choices=existing_parameters).ask())
 
     app.general_application(cursor, name, after_name, function_[0], window, parameters)
@@ -329,7 +335,7 @@ def take_look(history, pointer, function_dict, cursor, config):
                                 ORDER BY open_time
             """).fetchall()
 
-        last_values = [r[0] for r in rows][-5 : -1]
+        last_values = [r[0] for r in rows][-8 : -1]
 
         questionary.print(f"Calculated over {nb} candles", style="fg:blue")
         questionary.print("Last Values : ", style="fg:blue")

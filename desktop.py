@@ -61,7 +61,7 @@ while True :
                                 "💾 Download Data",
                                 "📈 Calculate Indicators",
                                 "📊 Calculate Stats",
-                                "📉 Plot",
+                                "✏️  Plot",
                                 "🗑️  Delete Column", 
                                 "📘 History",
                                 "⚙️  Settings",
@@ -113,11 +113,11 @@ while True :
                                          "2 variables (heatmap)"
                                      ]).ask()
 
-    if command == "📉 Plot":
+    if command == "✏️  Plot":
 
         while True : 
             print(""*80, end="\r")
-            print("📉 Plot")
+            print("✏️  Plot")
             print(" ")
 
             plot_indic(cursor, err_color=err_color, pointer=pointer)
