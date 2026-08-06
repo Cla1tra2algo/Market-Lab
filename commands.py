@@ -4,6 +4,7 @@ import sqlite3
 import applications as app
 from   questionary import *
 from rich.console import Console
+import graph_plot as gp
 
 
 
@@ -72,7 +73,7 @@ def yes_no(question, pointer, config):
     rep = questionary.select(question, ["No", "Yes"], pointer=pointer, style=config).ask()
     return rep
 
-def data_base(pointer, logo, config, err_color, active_color, logo_color):
+def data_base(pointer, logo, config, err_color):
 
     while True :
         symbol = input("Symbol : ")
@@ -112,39 +113,32 @@ def data_base(pointer, logo, config, err_color, active_color, logo_color):
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS candles(
-
         open_time INTEGER PRIMARY KEY,
-
         open REAL,
-
         high REAL,
         low REAL,
-
         close REAL,
-
         volume REAL, 
-
         close_time REAL,
-        
         vwema,
         vwema_savgol,
-
         quote_asset_vol REAL, 
-
         number_of_trades REAL,
-
         taker_buy_base_asset_volume REAL,
         taker_buy_quote_asset_volume REAL,
-
         statut REAL
-
     )
     """)
 
-    conn.commit()
-    skip(pointer, config=config)
-    turn_page(logo, symbol, interval, source, active_color=active_color, logo_color=logo_color)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS status(
+        open_time INTERGER PRIMARY KEY,
+        cross REAL
+        under_over)
+""")
 
+    conn.commit()
+    
     return conn, cursor, source, symbol, interval
 
 def download_data(cursor, symbol, interval, source, timestamp, conn, history):
@@ -166,7 +160,7 @@ def download_data(cursor, symbol, interval, source, timestamp, conn, history):
     
         history.append(f"{symbol} {interval} Downloaded From {source}")
    
-def calculate_indic(function_dict, function_list, cursor, history, symbol, interval, pointer, config, err_color):
+def calculate_indic(function_dict, function_list, cursor, conn, history, symbol, interval, pointer, config, err_color):
 
     print(""*80, end="\r")
     print("📈 Calculate Indicators")
@@ -233,10 +227,8 @@ def calculate_indic(function_dict, function_list, cursor, history, symbol, inter
         parameters.append(questionary.autocomplete(f"Select parameter {i+1} : ", choices=existing_parameters).ask())
 
     app.general_application(cursor, name, after_name, function_[0], window, parameters)
-
+    conn.commit()
     history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
-
-
 
 def plot_indic(cursor, err_color, pointer):
 
@@ -251,25 +243,28 @@ def plot_indic(cursor, err_color, pointer):
     while True:
         choice = questionary.autocomplete("What Indicator do you want to plot?", 
                                           choices=existing_values,
-                                          pointer=pointer).ask()
+                                          ).ask()
+        values.append(choice)
         if not choice in existing_values:
             questionary.print("You must enter an Indicator present in the Indicator list", 
                               style=err_color)
-            values.append(choice)
         else:
             rep = questionary.select("Do you wanna plot another Indicator ?", 
                                      ["Yes", "No"],
                                      pointer=pointer).ask()
             if rep == "No":
+                questionary.print(f"Indicators to plot : {values}", style="lightblue")
                 break
 
     while True:
-        rep = questionary.select("Do you wanna plot a Status ?", choices=["Yes", "No"]).ask()
+        rep = questionary.select("Do you wanna plot a Status ?", choices=["Yes", "No"], pointer=pointer).ask()
         if rep == "Yes":
             choice = questionary.autocomplete("What Status do you wanna plot ?")
+            break
         else:
             break
 
+    gp.plot(cursor, values, None)
 
 def delete_col(cursor, history, symbol, interval, source, pointer, config):
 
@@ -328,13 +323,28 @@ def take_look(history, pointer, function_dict, cursor, config):
                                 FROM candles
                                 WHERE {copy} IS NOT NULL""").fetchone()[0]
 
-    questionary.print(f"Calculated over {nb} candles", style="fg:lightblue")
+        rows = cursor.execute(f"""
+                                SELECT {copy}
+                                FROM candles
+                                ORDER BY open_time
+            """).fetchall()
+
+        last_values = [r[0] for r in rows][-5 : -1]
+
+        questionary.print(f"Calculated over {nb} candles", style="fg:blue")
+        questionary.print("Last Values : ", style="fg:blue")
+
+        for i in range(len(last_values)):
+            questionary.print(f"{last_values[i]}", style="fg:red")
+
 
     if look == "Function Dict":
         copy = questionary.select("Function Dict", choices=function_dict, pointer=pointer).ask()
         print(copy)
 
-    res = questionary.select("What do you wanna do ?", choices=["Go back to '👀 Take a Look'", f"Copy '{copy}' and go back to '👀 Take a Look'"]).ask()
+    res = questionary.select("What do you wanna do ?", 
+                             choices=["Go back to '👀 Take a Look'", f"Copy '{copy}' and go back to '👀 Take a Look'"], 
+                             pointer=pointer).ask()
     if res == f"Copy '{copy}' and go back to '👀 Take a Look'":
         history.append(f"{copy} Copied")
         return copy

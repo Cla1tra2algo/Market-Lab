@@ -253,9 +253,9 @@ def amplitude(data):
 
 def atr(data):
 
-    high = data[0]
-    low = data[1]
-    open = data[2]
+    high = data[1]
+    low = data[2]
+    open = data[0]
 
     period = len(high)
 
