@@ -44,10 +44,12 @@ def stat_onevar(cursor, status, data, inter):
         # Nombre de pics
         cursor.execute(f"""
             SELECT COUNT(*)
-            FROM candles
+            FROM status
             WHERE {status} > 0
-            AND {data} >= ?
-            AND {data} < ?
+            AND (SELECT {data}
+                FROM candles) >= ?
+            AND (SELECT {data}
+                FROM candles)  < ?
         """, (borne_min, borne_max))
 
         nb_peaks = cursor.fetchone()[0]
@@ -55,10 +57,12 @@ def stat_onevar(cursor, status, data, inter):
         # Nombre de creux
         cursor.execute(f"""
             SELECT COUNT(*)
-            FROM candles
+            FROM status
             WHERE {status} < 0
-            AND {data} >= ?
-            AND {data} < ?
+            AND (SELECT {data}
+                FROM candles) >= ?
+            AND (SELECT {data}
+                FROM candles)  < ?
         """, (borne_min, borne_max))
 
         nb_lows = cursor.fetchone()[0]

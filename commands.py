@@ -6,6 +6,7 @@ from   questionary import *
 from rich.console import Console
 import graph_plot as gp
 import event as ev
+import stat_making as sm
 
 
 
@@ -238,6 +239,30 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
     history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
 
+def calculate_stats(cursor, pointer):
+
+    print(""*80, end="\r")
+    print("🎉 Calculate Events")
+    print("")
+
+    cursor.execute("""PRAGMA table_info(candles)""")
+    existing_parameters = [row[1] for row in cursor.fetchall()]
+    existing_parameters.remove("open_time")
+    print(f"{existing_parameters}")
+
+    cursor.execute("""PRAGMA table_info(status)""")
+    existing_status = [row[1] for row in cursor.fetchall()]
+    existing_status.remove("open_time")
+    rep = questionary.select("What do you wanna plot ?", choices=["Classic Graph", "HeatMap"], pointer=pointer).ask()
+
+    if rep == "Classic Graph":
+        x_axis = input("How many values on the x-axis ? : ")
+        parameter = questionary.autocomplete("Select an Parameter :", choices=existing_parameters).ask()
+        status = questionary.autocomplete("Select a Status : ", choices=existing_status).ask()
+
+        sm.stat_onevar(cursor, status, parameter, int(x_axis))
+        
+
 def calculate_event(event_dict, pointer, cursor):
 
     print(""*80, end="\r")
@@ -264,7 +289,6 @@ def calculate_event(event_dict, pointer, cursor):
 
     event_function(cursor, data)
     questionary.print("Event calculated")
-
 
 
 def plot_indic(cursor, err_color, pointer):

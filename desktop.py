@@ -114,16 +114,18 @@ while True :
                 break
         
     if command == "📊 Calculate Stats":
-        command = questionary.select("Number of Variables : ",
-                                     choices=[
-                                         "1 variable",
-                                         "2 variables (heatmap)"
-                                     ]).ask()
+
+        calculate_stats(cursor, pointer)
 
 
     if command == "🎉 Calculate Events":
 
-        calculate_event(event_dict, pointer, cursor)
+        while True :
+            print(""*80, end="\r")
+            print("🎉 Calculate Events")
+            print(" ")
+
+            calculate_event(event_dict, pointer, cursor)
 
         
     if command == "✏️  Plot":
