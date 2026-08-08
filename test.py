@@ -4,13 +4,17 @@ import matplotlib.pyplot as plt
 import math_formula as mf
 import applications as app
 import event as ev
+from rich.console import Console
+
+console = Console()
+
+print("hello world")
+
+print(""*80, end="\r")
+
+print("hello world")
+
+console.clear()
 
 
-firt_timestamp = 1502942400000
 
-conn = sqlite3.connect("data_BTCUSDT_12h")
-cursor = conn.cursor()
-
-ev.over_under(cursor, data = ["sma_close_50", "sma_close_100"])
-
-conn.close()

@@ -7,6 +7,7 @@ from rich.console import Console
 import graph_plot as gp
 import event as ev
 import stat_making as sm
+from pathlib import Path
 
 
 
@@ -54,6 +55,23 @@ logo = """
   ╚═════════════════════╩═╝╩ ╩╚═╝    """
 
 
+def checking_file(chemin):
+    path = Path(chemin).expanduser()
+
+    if not path.exists():
+        return "❌ This file does not exists"
+
+    if not path.is_file():
+        return "❌ This path does not led to a file"
+
+    if path.suffix.lower() != ".db":
+        return "❌ The file must be .db"
+
+    return True
+
+
+
+
 def turn_page(logo, symbol, interval, source, logo_color, active_color):
     console = Console()
     console.clear()
@@ -77,71 +95,92 @@ def yes_no(question, pointer, config):
 
 def data_base(pointer, logo, config, err_color):
 
-    while True :
-        symbol = input("Symbol : ")
+    rep = questionary.select("Do you wanna Create or Open a file ? ", choices=["Create a file", "Open a file"], pointer=pointer).ask()
 
-        if symbol == "":
-            print(""*80, end="\r")
-            print("")
-            questionary.print("❌ You must enter a symbol (ex: BTC)", style=err_color)
-            continue
-        else:
-            break
-            
-    source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"], pointer=pointer, style=config).ask()
+    if rep == "Open a file":
 
-    while True :
-        if source == "Binance":
-            interval = questionary.autocomplete("Timeframe : ", choices=BINANCE_TIMEFRAMES).ask()
-        else:
-            interval = questionary.autocomplete("Timeframe : ", choices=HYPERLIQUID_TIMEFRAMES).ask()
+        file = questionary.path("Select a .db File", validate=checking_file).ask()
 
-        if interval in BINANCE_TIMEFRAMES or interval in HYPERLIQUID_TIMEFRAMES:
-            break
+        conn = sqlite3.connect(file)
+        cursor = conn.cursor()
 
-        else:
-            print(""*80, end="\r")
-            print("")
-            questionary.print("❌ You must enter a Timeframe present in the Timeframe list", style=err_color)
+        file_data = file.split("_")
+        source = file_data[-1].split(".")
+        source = source[0]
+
+        symbol = file_data[1]
+        interval = file_data[2]
+
+        return conn, cursor, source, symbol, interval
         
-    print(""*80, end="\r")
-    print(""*80, end="\r")
-    print(""*80, end="\r")
 
-    symbol = symbol.upper() + "USDT"
+    if rep == "Create a file":
 
-    conn = sqlite3.connect(f"data_{symbol}_{interval}_{source}")
-    cursor = conn.cursor()
+        while True :
+            symbol = input("Symbol : ")
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS candles(
-        open_time INTEGER PRIMARY KEY,
-        open REAL,
-        high REAL,
-        low REAL,
-        close REAL,
-        volume REAL, 
-        close_time REAL,
-        vwema,
-        vwema_savgol,
-        quote_asset_vol REAL, 
-        number_of_trades REAL,
-        taker_buy_base_asset_volume REAL,
-        taker_buy_quote_asset_volume REAL,
-        statut REAL
-    )
+            if symbol == "":
+                print(""*80, end="\r")
+                print("")
+                questionary.print("❌ You must enter a symbol (ex: BTC)", style=err_color)
+                continue
+            else:
+                break
+                
+        source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"], pointer=pointer, style=config).ask()
+
+        while True :
+            if source == "Binance":
+                interval = questionary.autocomplete("Timeframe : ", choices=BINANCE_TIMEFRAMES).ask()
+            else:
+                interval = questionary.autocomplete("Timeframe : ", choices=HYPERLIQUID_TIMEFRAMES).ask()
+
+            if interval in BINANCE_TIMEFRAMES or interval in HYPERLIQUID_TIMEFRAMES:
+                break
+
+            else:
+                print(""*80, end="\r")
+                print("")
+                questionary.print("❌ You must enter a Timeframe present in the Timeframe list", style=err_color)
+            
+        print(""*80, end="\r")
+        print(""*80, end="\r")
+        print(""*80, end="\r")
+
+        symbol = symbol.upper() + "USDT"
+
+        conn = sqlite3.connect(f"data_{symbol}_{interval}_{source}.db")
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS candles(
+            open_time INTEGER PRIMARY KEY,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume REAL, 
+            close_time REAL,
+            vwema,
+            vwema_savgol,
+            quote_asset_vol REAL, 
+            number_of_trades REAL,
+            taker_buy_base_asset_volume REAL,
+            taker_buy_quote_asset_volume REAL,
+            statut REAL
+        )
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS status(
+            open_time INTERGER PRIMARY KEY
+            )
     """)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS status(
-        open_time INTERGER PRIMARY KEY
-        )
-""")
 
-
-    conn.commit()
-    
-    return conn, cursor, source, symbol, interval
+        conn.commit()
+        
+        return conn, cursor, source, symbol, interval
 
 def download_data(cursor, symbol, interval, source, timestamp, conn, history):
 

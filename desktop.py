@@ -56,6 +56,7 @@ print("")
 
 
 conn, cursor, source, symbol, interval = data_base(pointer, logo, config=style, err_color=err_color)
+conn.commit()
 
 history = []
 
@@ -140,7 +141,7 @@ while True :
             turn_page(logo, symbol, interval, source, logo_color, active_color=active_file)
             if res == "Yes":
                 break
-            
+
 
         
     if command == "🗑️  Delete Column":
