@@ -59,6 +59,27 @@ logo = """
 
 CUSTOM_FILE = Path.cwd() / "custom_indicators.py"
 
+CUSTOM_TEMPLATE = """
+
+# This is an example, for more informations, read the README.md
+
+def function_1(data)
+    parameter_1 = data[0]
+    parameter_2 = data[1]
+
+    return parameter_1
+
+function_dict = {
+    "function_1": (function_1, 2, ["parameter_1", "parameter_2"])
+}
+
+"""
+
+def create_custom_indicators_file():
+    if CUSTOM_FILE.exists():
+        questionary.print(f"Custom indicator file already exists: {CUSTOM_FILE}", style="fg:yellow")
+        return
+
 
 def checking_file(chemin, err_color):
 
@@ -330,8 +351,6 @@ def manage_custom_indicators(pointer):
                                             "Reload custom indicators",
                                             "Back to main menu"], pointer=pointer).ask()
 
-    
-
 def calculate_stats(cursor, pointer):
 
     print(""*80, end="\r")
@@ -358,13 +377,14 @@ def calculate_stats(cursor, pointer):
         questionary.print("❌ Enter a positive integer.", style="fg:red")
         return
     parameter = questionary.autocomplete("Select a parameter:", choices=existing_parameters).ask()
-    status = questionary.autocomplete("Select a status:", choices=existing_status).ask()
+    status    = questionary.autocomplete("Select a status:", choices=existing_status).ask()
     if parameter not in existing_parameters or status not in existing_status:
         questionary.print("❌ Select values from the lists.", style="fg:red")
         return
 
     if rep == "Classic chart":
         sm.stat_onevar(cursor, status, parameter, int(x_axis))
+
     else:
         second_parameter = questionary.autocomplete("Select a second parameter:", choices=existing_parameters).ask()
         if second_parameter not in existing_parameters:
@@ -543,7 +563,7 @@ def take_look(history, pointer, function_dict, cursor, config):
     indicator_dict = [row[1] for row in cursor.fetchall()]
     
 
-    look = questionary.select("What would you like to inspect?", ["Indicators", "Available functions"], pointer=pointer, style=config).ask()
+    look = questionary.select("What would you like to inspect?", ["Indicators", "Status", "Available functions"], pointer=pointer, style=config).ask()
     
     if look == "Indicators":
         copy = questionary.select("Indicators:", choices=indicator_dict, pointer=pointer, style=config).ask()
@@ -569,6 +589,33 @@ def take_look(history, pointer, function_dict, cursor, config):
 
     if look == "Available functions":
         copy = questionary.select("Available functions:", choices=function_dict, pointer=pointer).ask()
+
+
+    if look == "Status":
+
+        cursor.execute("PRAGMA table_info(status)")
+        status_dict = indicator_dict = [row[1] for row in cursor.fetchall()]
+
+        status_dict.remove("open_time")
+
+        copy = questionary.select("Status:", choices=status_dict, pointer=pointer, style=config).ask()
+        nb = cursor.execute(f"""
+                            SELECT COUNT(DISTINCT {copy})
+                            FROM status
+                            WHERE {copy} IS NOT NULL""").fetchone()[0]
+        
+        rows = cursor.execute(f"""
+                            SELECT {copy}
+                            FROM status
+                            ORDER BY open_time
+                    """).fetchall()
+        
+        last_values = [r[0] for r in rows][-8:]
+        
+        questionary.print(f"Calculated over {nb} candles", style="fg:blue")
+        questionary.print("Last values:", style="fg:blue")
+        
+
 
     history.append(f"Inspected {copy}.")
     return None
