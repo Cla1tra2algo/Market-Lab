@@ -28,77 +28,80 @@ answers_color = "fg:orange"
 err_color = "fg:red"
 active_file = "fg:yellow"
 
-style = questionary.Style([("question", questions_color), ("answer", questions_color)])
+style = questionary.Style([("question", questions_color), ("answer", answers_color)])
 
 
-function_dict = {
-    "sma" : (mf.sma, 1, ["close", "high", "low", "open", "volume"]),
-    "ema" : (mf.ema, 1, ["open", "close", "low", "high"]),
-    "atr" : (mf.atr, 3, ["open", "high", "low"]),
-    "rsi" : (mf.rsi, 2),
-    "vwma" : (mf.vwma, 2, "open", "volume"),
-    "amplitude" : (mf.amplitude, 2),
-    "relative" : (mf.amplitude, 2)
-}
+function_dict = mf.function_dict
 
 event_dict = {
-    "cross" : (ev.cross, 2, ["sma"])
+    "cross" : (ev.cross, 2, ["sma"]),
+    "highest_lowest" : (ev.highest_lowest, 2, ["close", "window"])
 }
 
 
 function_list = list(function_dict.keys())
 
 values_list = []
-
-print("")
 questionary.print(logo, style=logo_color)
 print("")
 
 
-conn, cursor, source, symbol, interval = data_base(pointer, logo, config=style, err_color=err_color)
+conn, cursor, symbol, interval = data_base(pointer, logo, config=style, err_color=err_color)
 conn.commit()
 
 history = []
+
+
+def run_safely(action, *args, **kwargs):
+    try:
+        return action(*args, **kwargs)
+    except (RuntimeError, ValueError, sqlite3.Error) as error:
+        questionary.print(f"❌ {error}", style=err_color)
+        return None
+
 
 while True :
 
     command = questionary.select("Actions : ", 
                                 choices = [
-                                "📁 Change or Create a DataBase",
+                                "📁 Open or Create a Database",
                                 "💾 Download Data",
                                 "📈 Calculate Indicators",
-                                "📊 Calculate Stats",
+                                "🧩 Manage Custom Indicators",
+                                "📊 Calculate Statistics",
                                 "🎉 Calculate Events",
                                 "✏️  Plot",
-                                "🗑️  Delete Column", 
+                                "🗑️  Delete a Column", 
                                 "📘 History",
                                 "⚙️  Settings",
                                 "👀 Take a Look",
-                                "🚪 Exit"], pointer="▶︎").ask()
+                                "🚪 Exit"], pointer=pointer, style=style).ask()
 
     print(""*80, end="\r")
 
-    if command == "📁 Change or Create a DataBase":
+    if command == "📁 Open or Create a Database":
 
         conn.commit()
         conn.close()
 
-        data_base(pointer, logo, err_color=err_color, config=style)
+        conn, cursor, symbol, interval = data_base(
+            pointer, logo, err_color=err_color, config=style
+        )
 
         skip(pointer, config=style)
-        turn_page(logo, symbol, interval, source, active_color=active_file, logo_color=logo_color)
+        turn_page(logo, symbol, interval, active_color=active_file, logo_color=logo_color)
         
 
     if command == "💾 Download Data":
-        download_data(cursor, symbol, interval, source, timestamp, conn, history)
+        run_safely(download_data, cursor, symbol, interval, timestamp, conn, history)
         res = skip(pointer, config=style)
-        turn_page(logo, symbol, interval, source, logo_color, active_color=active_file)
+        turn_page(logo, symbol, interval, logo_color, active_color=active_file)
 
 
 
     if command == "📈 Calculate Indicators":
         while True:
-            calculate_indic(function_dict=function_dict, 
+            run_safely(calculate_indic, function_dict=function_dict, 
                             function_list=function_list, 
                             cursor=cursor, 
                             history=history, 
@@ -110,13 +113,13 @@ while True :
                             conn=conn)
             
             res = skip(pointer, config=style)
-            turn_page(logo, symbol, interval, source, logo_color=logo_color, active_color=active_file)
+            turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
             if res == "Yes":
                 break
         
-    if command == "📊 Calculate Stats":
+    if command == "📊 Calculate Statistics":
 
-        calculate_stats(cursor, pointer)
+        run_safely(calculate_stats, cursor, pointer)
 
 
     if command == "🎉 Calculate Events":
@@ -126,7 +129,13 @@ while True :
             print("🎉 Calculate Events")
             print(" ")
 
-            calculate_event(event_dict, pointer, cursor)
+            run_safely(calculate_event, event_dict, pointer, cursor)
+
+            res = skip(pointer, config=style)
+            turn_page(logo, symbol, interval, logo_color, active_color=active_file)
+
+            if res == "Yes":
+                break
 
         
     if command == "✏️  Plot":
@@ -136,20 +145,20 @@ while True :
             print("✏️  Plot")
             print(" ")
 
-            plot_indic(cursor, err_color=err_color, pointer=pointer)
+            run_safely(plot_indic, cursor, err_color=err_color, pointer=pointer)
             res = skip(pointer, config=style)
-            turn_page(logo, symbol, interval, source, logo_color, active_color=active_file)
+            turn_page(logo, symbol, interval, logo_color, active_color=active_file)
             if res == "Yes":
                 break
 
 
         
-    if command == "🗑️  Delete Column":
+    if command == "🗑️  Delete a Column":
         while True:
-            delete_col(cursor, history, symbol, interval, source, pointer, config=style)
+            run_safely(delete_col, cursor, history, symbol, interval, pointer, config=style)
             conn.commit()
             res = skip(pointer, config=style)
-            turn_page(logo, symbol, interval, source, logo_color=logo_color, active_color=active_file)
+            turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
             if res == "Yes":
                 break
         
@@ -157,27 +166,42 @@ while True :
         while True:
             action_history(history)
             res = skip(pointer, config=style)
-            turn_page(logo, symbol, interval, source, logo_color=logo_color, active_color=active_file)
+            turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
             if res == "Yes":
                 break
+
+    if command == "⚙️  Settings":
+        pointer, logo_color, questions_color, answers_color, err_color, active_file = settings(
+            pointer,
+            logo_color,
+            questions_color,
+            answers_color,
+            err_color,
+            active_file,
+        )
+        style = questionary.Style([
+            ("question", questions_color),
+            ("answer", answers_color),
+        ])
+        turn_page(logo, symbol, interval, logo_color, active_color=active_file)
         
     if command == "👀 Take a Look":
         while True:
             res = take_look(history, pointer, function_dict, cursor, config=style)
             if res != None:
                 copy = res
-            turn_page(logo, symbol, interval, source, logo_color=logo_color, active_color=active_file)
+            turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
             skip(pointer, config=style)
             break
 
     if command == "🚪 Exit":
-        rep = yes_no("Do you really wanna leave MARKET LAB ?", pointer, config=style)
+        rep = yes_no("Do you really want to exit Market Lab?", pointer, config=style)
 
         if rep == "Yes":
+            conn.commit()
+            conn.close()
             questionary.print("Leaving MARKET LAB", style="fg:red")
             break
 
         else:
             print(""*80, end="\r")
-
-

@@ -2,7 +2,7 @@ import numpy as np
 from scipy.signal import *
 import math_formula as mf
 from math_formula import *
-
+from numpy.lib.stride_tricks import sliding_window_view
 
 
 def peaks_detection(cursor, prominence_para):
@@ -53,7 +53,7 @@ def peaks_detection(cursor, prominence_para):
     cursor.connection.commit()
 
 def cross(cursor, data):
-    cursor.execute(f"SELECT {data[0]}, {data[1]}, open_time FROM candles")
+    cursor.execute(f"SELECT \"{data[0]}\", \"{data[1]}\", open_time FROM candles ORDER BY open_time")
 
     rows = cursor.fetchall()
 
@@ -86,16 +86,17 @@ def cross(cursor, data):
 
     name = f"cross_{data[0]}_{data[1]}"
 
-    cursor.execute(f"""
-        ALTER TABLE status
-        ADD COLUMN {name}
-""")
+    if not mf.column_exists(cursor, "status", name):
+        cursor.execute(f"""
+            ALTER TABLE status
+            ADD COLUMN \"{name}\"
+    """)
 
     cursor.connection.commit()
 
     cursor.executemany(f"""
         UPDATE status
-        SET {name} = ?
+        SET \"{name}\" = ?
         WHERE open_time = ?
     """, results)
 
@@ -130,7 +131,7 @@ def over_under(cursor, data):
 
     results = list(zip(status, open_times))
 
-    if mf.column_exists(cursor, "candles", "status_under_over") is False:
+    if mf.column_exists(cursor,"status", "status_under_over") is False:
         cursor.execute("""
             ALTER TABLE status
             ADD COLUMN status_under_over
@@ -144,5 +145,59 @@ def over_under(cursor, data):
 
     cursor.connection.commit()
 
+def highest_lowest(cursor, data):
+
+    window = int(data[1])
+
+    if window < 1 or len(rows := cursor.execute(f"""
+                SELECT {data[0]}, open_time
+                FROM candles
+                ORDER BY open_time
+                """).fetchall()) < window:
+        raise ValueError("The window size must not exceed the number of candles.")
+
+    data_list = rows
+    values_list = [r[0] for r in rows]
+    open_times = [r[1] for r in rows]
+
+    nb = len(open_times)
+
+    windows_list = np.array(sliding_window_view(values_list, window))
+    
+    window_opentimes = np.array(sliding_window_view(open_times, window))
+
+    status = [0] * nb
+
+    for i in range(len(windows_list)):
+        
+       
+        id = list(windows_list[i]).index(max(windows_list[i]))
+        corresponding_opentime = window_opentimes[i][id]
+        
+        corresponding_index = list(open_times).index(corresponding_opentime)
+
+        status[int(corresponding_index)] = 1
+
+
+        id = list(windows_list[i]).index(min(windows_list[i]))
+
+        corresponding_opentime = window_opentimes[i][id]
+        
+        corresponding_index = list(open_times).index(corresponding_opentime)
+
+
+        status[int(corresponding_index)] = -1
+        
+    results = list(zip(status, open_times))
+
+    if mf.column_exists(cursor, "status", "highest_lowest") is False:
+        cursor.execute("""
+            ALTER TABLE status
+            ADD COLUMN highest_lowest""")
+
+        cursor.connection.commit()
+
+    cursor.executemany("UPDATE status SET highest_lowest = ? WHERE open_time = ?", results)
+    cursor.connection.commit()
 
         

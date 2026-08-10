@@ -1,10 +1,14 @@
-from datetime import datetime
-import requests 
-from time import *
+import time
+
+import requests
 
 def extraction_binance(cursor, symbol, interval, timestamp):
 
     url = "https://api.binance.com/api/v3/klines"
+
+    last_row = cursor.execute("SELECT MAX(open_time) FROM candles").fetchone()
+    if last_row and last_row[0] is not None:
+        timestamp = last_row[0] + 1
 
     count = 0
     while True :
@@ -15,9 +19,15 @@ def extraction_binance(cursor, symbol, interval, timestamp):
             "limit": 1000,
             "startTime": timestamp
         }
-        response = requests.get(url, params=params)
+        try:
+            response = requests.get(url, params=params, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+        except (requests.RequestException, ValueError) as error:
+            raise RuntimeError(f"Unable to download Binance data: {error}") from error
 
-        data = response.json()
+        if isinstance(data, dict):
+            raise RuntimeError(f"Binance API error: {data.get('msg', data)}")
 
         if len(data) == 0 :  # Regarde si des donnés renvoyées ou si elles l'ont toute déjà été
             break          
@@ -52,12 +62,12 @@ def extraction_binance(cursor, symbol, interval, timestamp):
 
 
             cursor.execute(
-                f"INSERT INTO candles ({features}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                f"INSERT OR IGNORE INTO candles ({features}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                 values
                 )
 
             cursor.execute(
-                "INSERT INTO status (open_time) VALUES (?)", (open_time,))
+                "INSERT OR IGNORE INTO status (open_time) VALUES (?)", (open_time,))
 
         print(f"Candles collected : {count*1000}", end="\r")
         
@@ -67,35 +77,41 @@ def extraction_binance(cursor, symbol, interval, timestamp):
         timestamp = last_timestamp + 1
 
 def extraction_hyperliquid(cursor, symbol, interval, timestamp):
-
-    url = "https://api.hyperliquid.xyz/info"
-
-    end = int(time.time()) * 1000
-
+    """Download Hyperliquid candles, whose API returns dictionaries."""
     payload = {
-        "type" : "candleSnapshot", 
-        "req" : {
+        "type": "candleSnapshot",
+        "req": {
             "coin": symbol,
-            "interval" : interval,
-            "startTime" : timestamp,
-            "endTime" : end}
-        }
+            "interval": interval,
+            "startTime": timestamp,
+            "endTime": int(time.time() * 1000),
+        },
+    }
+    try:
+        response = requests.post("https://api.hyperliquid.xyz/info", json=payload, timeout=20)
+        response.raise_for_status()
+        candles = response.json()
+    except (requests.RequestException, ValueError) as error:
+        raise RuntimeError(f"Unable to download Hyperliquid data: {error}") from error
 
-    response = requests.post(url, json=payload)
-    candles  = response.json()
+    if not isinstance(candles, list):
+        raise RuntimeError(f"Hyperliquid API error: {candles}")
 
-    print(f"{len(candles)} collected ")
+    features = (
+        "open_time, open, high, low, close, volume, close_time, quote_asset_vol, "
+        "number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume"
+    )
+    for candle in candles:
+        values = (
+            candle["t"], float(candle["o"]), float(candle["h"]), float(candle["l"]),
+            float(candle["c"]), float(candle["v"]), candle["T"], None,
+            candle.get("n"), None, None,
+        )
+        cursor.execute(
+            f"INSERT OR IGNORE INTO candles ({features}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            values,
+        )
+        cursor.execute("INSERT OR IGNORE INTO status (open_time) VALUES (?)", (candle["t"],))
 
-    last_candle = candles[-1]
-
-    print(last_candle)
-
-    open_times   = [r["t"] for r in candles]
-    list_open    = [float(r["o"]) for r in candles]
-    list_close   = [float(r["c"]) for r in candles]
-    list_high    = [float(r["h"]) for r in candles]
-    list_low     = [float(r["l"]) for r in candles]
-    list_volume  = [float(r["v"]) for r in candles]
-    list_nbtrade = [r["n"] for r in candles]
-
-    print(list_nbtrade)
+    print(f"Candles collected: {len(candles)}")
+    

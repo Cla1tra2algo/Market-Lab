@@ -32,26 +32,21 @@ def plot(cursor, values, status):
     open_times = [row[0] for row in rows]
 
 
-    if status != None :
+    if not open_times:
+        raise ValueError("There is no data to plot.")
 
-  
-        for i in range(len(open_times)):
+    if status is not None:
+        rows = cursor.execute(f'''SELECT "{status}" FROM status ORDER BY open_time''').fetchall()
+        status_list = [row[0] for row in rows]
 
-            cursor.execute(f"""
-                    SELECT {status}
-                    FROM status
-                    ORDER BY open_time
-                    """)
-
-            rows = cursor.fetchall()
-            status_list = list([row[0] for row in rows])
-
-            if status_list[i] is None :
+        for i, current_status in enumerate(status_list[:len(open_times)]):
+            value = values_list[0][i]
+            if current_status is None or value is None:
                 continue
-            if status_list[i] > 0:
-                plt.scatter(x=i, y=values_list[0][i]+ values_list[0][i]*0.1, marker="^", c="red", s=50, alpha=0.5)
-            if status_list[i] < 0:
-                plt.scatter(x=i, y=values_list[0][i]- values_list[0][i]*0.1, marker="^", c="blue", s=50, alpha=0.5)
+            if current_status > 0:
+                plt.scatter(x=i, y=value * 1.1, marker="^", c="red", s=50, alpha=0.5)
+            elif current_status < 0:
+                plt.scatter(x=i, y=value * 0.9, marker="v", c="blue", s=50, alpha=0.5)
 
     for i in range(nb):
         plt.plot(np.array(values_list[i]), label=values[i])

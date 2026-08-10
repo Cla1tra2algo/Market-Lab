@@ -8,6 +8,7 @@ import graph_plot as gp
 import event as ev
 import stat_making as sm
 from pathlib import Path
+import re
 
 
 
@@ -55,34 +56,47 @@ logo = """
   ╚═════════════════════╩═╝╩ ╩╚═╝    """
 
 
-def checking_file(chemin):
+
+CUSTOM_FILE = Path.cwd() / "custom_indicators.py"
+
+
+def checking_file(chemin, err_color):
+
     path = Path(chemin).expanduser()
 
     if not path.exists():
-        return "❌ This file does not exists"
+        print(""*80, end="\r")
+        print(""*80, end="\r")
+        questionary.print("❌ This file does not exist.", style=err_color)
+        return False
 
     if not path.is_file():
-        return "❌ This path does not led to a file"
+        print(""*80, end="\r")
+        print(""*80, end="\r")
+        questionary.print("❌ This path does not lead to a file.", style=err_color)
+        return False
 
     if path.suffix.lower() != ".db":
-        return "❌ The file must be .db"
+        print(""*80, end="\r")
+        print(""*80, end="\r")
+        questionary.print("❌ The file must have a .db extension.", style=err_color)
+        return False
 
     return True
 
 
+def turn_page(logo, symbol, interval, logo_color, active_color):
 
-
-def turn_page(logo, symbol, interval, source, logo_color, active_color):
     console = Console()
     console.clear()
     print("")
     questionary.print(logo, style=logo_color)
     print("")
-    questionary.print(f"Working on {symbol} {interval} From {source}", style=active_color)
+    questionary.print(f"Working on {symbol} — {interval}", style=active_color)
     print("")
 
 def skip(pointer, config):
-    res = questionary.select("Go back to Menu ?", choices=["Yes", "Continue"], pointer=pointer, style=config ).ask()
+    res = questionary.select("Return to the main menu?", choices=["Yes", "Continue"], pointer=pointer, style=config ).ask()
     if res == "Yes":
         print(""*80, end="\r")
         return res
@@ -93,63 +107,97 @@ def yes_no(question, pointer, config):
     rep = questionary.select(question, ["No", "Yes"], pointer=pointer, style=config).ask()
     return rep
 
+def _database_schema_is_valid(path):
+    try:
+        with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True) as connection:
+            tables = {
+                row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            return {"candles", "status"}.issubset(tables)
+    except sqlite3.Error:
+        return False
+
+
+def _identifier_is_valid(value):
+    return isinstance(value, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is not None
+
+
+def _quote_identifier(value):
+    if not _identifier_is_valid(value):
+        raise ValueError("Invalid database identifier.")
+    return f'"{value}"'
+
+
+def _database_details(path):
+    stem = Path(path).stem
+    parts = stem.split("_")
+    if len(parts) < 3 or parts[0] != "data" or parts[2] not in BINANCE_TIMEFRAMES:
+        raise ValueError("The database name must follow data_SYMBOL_TIMEFRAME.db.")
+    return parts[1], parts[2]
+
+
 def data_base(pointer, logo, config, err_color):
 
-    rep = questionary.select("Do you wanna Create or Open a file ? ", choices=["Create a file", "Open a file"], pointer=pointer).ask()
+    rep = questionary.select("Would you like to create or open a database?", choices=["Create a database", "Open a database"], pointer=pointer, style=config).ask()
 
-    if rep == "Open a file":
+    if rep == "Open a database":
 
-        file = questionary.path("Select a .db File", validate=checking_file).ask()
+        file = questionary.path("Database file (.db):", validate=lambda chemin: checking_file(chemin, err_color)).ask()
+        if not _database_schema_is_valid(file):
+            questionary.print("❌ This is not a Market Lab database.", style=err_color)
+            return data_base(pointer, logo, config, err_color)
 
         conn = sqlite3.connect(file)
         cursor = conn.cursor()
+        try:
+            symbol, interval = _database_details(file)
+        except ValueError as error:
+            conn.close()
+            questionary.print(f"❌ {error}", style=err_color)
+            return data_base(pointer, logo, config, err_color)
 
-        file_data = file.split("_")
-        source = file_data[-1].split(".")
-        source = source[0]
-
-        symbol = file_data[1]
-        interval = file_data[2]
-
-        return conn, cursor, source, symbol, interval
+        return conn, cursor, symbol, interval
         
 
-    if rep == "Create a file":
+    if rep == "Create a database":
 
         while True :
-            symbol = input("Symbol : ")
+            symbol = input("Symbol (e.g. BTC or BTCUSDT): ").strip().upper()
 
             if symbol == "":
                 print(""*80, end="\r")
                 print("")
-                questionary.print("❌ You must enter a symbol (ex: BTC)", style=err_color)
+                questionary.print("❌ Enter a symbol, for example BTC.", style=err_color)
                 continue
             else:
                 break
                 
-        source = questionary.select("Source : ", choices=["Binance", "HyperLiquid"], pointer=pointer, style=config).ask()
-
+        
         while True :
-            if source == "Binance":
-                interval = questionary.autocomplete("Timeframe : ", choices=BINANCE_TIMEFRAMES).ask()
-            else:
-                interval = questionary.autocomplete("Timeframe : ", choices=HYPERLIQUID_TIMEFRAMES).ask()
-
-            if interval in BINANCE_TIMEFRAMES or interval in HYPERLIQUID_TIMEFRAMES:
+            
+            interval = questionary.autocomplete("Timeframe:", choices=BINANCE_TIMEFRAMES, style=config).ask()
+            
+            if interval in BINANCE_TIMEFRAMES :
                 break
 
             else:
                 print(""*80, end="\r")
                 print("")
-                questionary.print("❌ You must enter a Timeframe present in the Timeframe list", style=err_color)
+                questionary.print("❌ Select a timeframe from the list.", style=err_color)
             
         print(""*80, end="\r")
         print(""*80, end="\r")
         print(""*80, end="\r")
 
-        symbol = symbol.upper() + "USDT"
+        if not re.fullmatch(r"[A-Z0-9]+", symbol):
+            questionary.print("❌ The symbol may contain only letters and numbers.", style=err_color)
+            return data_base(pointer, logo, config, err_color)
+        if not symbol.endswith("USDT"):
+            symbol += "USDT"
 
-        conn = sqlite3.connect(f"data_{symbol}_{interval}_{source}.db")
+        conn = sqlite3.connect(f"data_{symbol}_{interval}.db")
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -173,33 +221,27 @@ def data_base(pointer, logo, config, err_color):
 
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS status(
-            open_time INTERGER PRIMARY KEY
+            open_time INTEGER PRIMARY KEY
             )
     """)
 
 
         conn.commit()
         
-        return conn, cursor, source, symbol, interval
+        return conn, cursor, symbol, interval
 
-def download_data(cursor, symbol, interval, source, timestamp, conn, history):
+def download_data(cursor, symbol, interval, timestamp, conn, history):
 
     print(""*80, end="\r")
     print("💾 Download Data")
     
-    if source == "Binance":
-            de.extraction_binance(cursor, symbol, interval, timestamp)
-            conn.commit()
     
-    print("Data Downloaded !")
+    de.extraction_binance(cursor, symbol, interval, timestamp)
+    conn.commit()
     
-    if source == "Hyperliquid":
-        de.extraction_hyperliquid(cursor, symbol, interval, timestamp)
-        conn.commit()
+    print("Data downloaded.")
     
-        print("Data Downloaded !")
-    
-        history.append(f"{symbol} {interval} Downloaded From {source}")
+    history.append(f"{symbol} {interval} Downloaded ")
    
 def calculate_indic(function_dict, function_list, cursor, conn, history, symbol, interval, pointer, config, err_color):
 
@@ -208,25 +250,25 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
     print("")
 
     while True :
-        name = input("Name : ")
-        if name == "":
+        name = input("Indicator name: ").strip()
+        if not _identifier_is_valid(name):
             print(""*80, end="\r")
             print("")
-            questionary.print("You Must Enter a Name", style="fg:red")
+            questionary.print("❌ Use a name starting with a letter or underscore; use only letters, numbers, and underscores.", style=err_color)
 
         else: 
             break
 
-    after_name = questionary.select("Adding an After Name ? : ",
+    after_name = questionary.select("Append selected parameters to the indicator name?",
                                         ["No", "Yes"], pointer=pointer, style=config).ask()
 
     while True : 
-        function_ = questionary.autocomplete("Select a function :", choices=function_list).ask()
+        function_ = questionary.autocomplete("Select a function:", choices=function_list, style=config).ask()
 
         if function_ == "":
             print(""*80, end="\r")
             print("")
-            questionary.print("❌ You Must Select a function", style=err_color)
+            questionary.print("❌ Select a function.", style=err_color)
 
         elif function_ in function_list:
             function_ = function_dict[function_]
@@ -234,12 +276,12 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
         else: 
             print(""*80, end="\r")
             print("")
-            questionary.print("❌ This function does not exists. Create and add it in the function dict.", style=err_color)
+            questionary.print("❌ This function does not exist.", style=err_color)
     
 
     while True :
         while True:
-            window = input("Window : ")
+            window = input("Window size: ")
 
             try:
                 window = int(window)
@@ -267,39 +309,68 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
 
     if type(function_[-1]) is list:
         print("")
-        questionary.print(f"Recomended parameters : {function_[-1]}", style="fg:blue")
+        questionary.print(f"Recommended parameters: {function_[-1]}", style="fg:blue")
 
     for i in range(function_[1]):
 
-        parameters.append(questionary.autocomplete(f"Select parameter {i+1} : ", choices=existing_parameters).ask())
+        parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
+        if parameter not in existing_parameters:
+            questionary.print("❌ Select a parameter from the list.", style=err_color)
+            return
+        parameters.append(parameter)
 
     app.general_application(cursor, name, after_name, function_[0], window, parameters)
     conn.commit()
     history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
+def manage_custom_indicators(pointer):
+    rep = questionary.select("Actions : ", ["Create custom_indicators.py", 
+                                            "Open / edit custom_indicators.py", 
+                                            "List available custom indicators", 
+                                            "Reload custom indicators",
+                                            "Back to main menu"], pointer=pointer).ask()
+
+    
 
 def calculate_stats(cursor, pointer):
 
     print(""*80, end="\r")
-    print("🎉 Calculate Events")
+    print("📊 Calculate Statistics")
     print("")
 
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_parameters = [row[1] for row in cursor.fetchall()]
     existing_parameters.remove("open_time")
-    print(f"{existing_parameters}")
 
     cursor.execute("""PRAGMA table_info(status)""")
     existing_status = [row[1] for row in cursor.fetchall()]
     existing_status.remove("open_time")
-    rep = questionary.select("What do you wanna plot ?", choices=["Classic Graph", "HeatMap"], pointer=pointer).ask()
+    rep = questionary.select("Choose a chart type:", choices=["Classic chart", "Heat map"], pointer=pointer).ask()
 
-    if rep == "Classic Graph":
-        x_axis = input("How many values on the x-axis ? : ")
-        parameter = questionary.autocomplete("Select an Parameter :", choices=existing_parameters).ask()
-        status = questionary.autocomplete("Select a Status : ", choices=existing_status).ask()
+    if not existing_status:
+        questionary.print("❌ Create an event before calculating statistics.", style="fg:red")
+        return
+    try:
+        x_axis = int(input("Number of quantile intervals: "))
+        if x_axis < 1:
+            raise ValueError
+    except ValueError:
+        questionary.print("❌ Enter a positive integer.", style="fg:red")
+        return
+    parameter = questionary.autocomplete("Select a parameter:", choices=existing_parameters).ask()
+    status = questionary.autocomplete("Select a status:", choices=existing_status).ask()
+    if parameter not in existing_parameters or status not in existing_status:
+        questionary.print("❌ Select values from the lists.", style="fg:red")
+        return
 
+    if rep == "Classic chart":
         sm.stat_onevar(cursor, status, parameter, int(x_axis))
+    else:
+        second_parameter = questionary.autocomplete("Select a second parameter:", choices=existing_parameters).ask()
+        if second_parameter not in existing_parameters:
+            questionary.print("❌ Select a parameter from the list.", style="fg:red")
+            return
+        sm.stat_twovar(cursor, status, parameter, second_parameter, int(x_axis))
         
 
 def calculate_event(event_dict, pointer, cursor):
@@ -309,13 +380,10 @@ def calculate_event(event_dict, pointer, cursor):
     print("")
 
     event_list = list(event_dict.keys())
-    questionary.print(f"{len(event_list)}, {type(event_list[0])}")
-
-    choice = questionary.select("Select an event :", choices=event_list, pointer=pointer).ask()
+    choice = questionary.select("Select an event:", choices=event_list, pointer=pointer).ask()
 
     event = event_dict[choice]
     event_function = event[0]
-    questionary.print(f"{type(event_function)}")
 
     nb_para = event[1]
 
@@ -323,84 +391,135 @@ def calculate_event(event_dict, pointer, cursor):
     existing_parameters = [row[1] for row in cursor.fetchall()]
     data = []
 
+    questionary.print(f"Recommended Parameters : {event[-1]}", style="fg:lightblue")
+
     for i in range(nb_para):
-        data.append(questionary.autocomplete(f"Select Parameter {i+1} : ", choices=existing_parameters).ask())
+        if choice == "highest_lowest" and i == 1:
+            try:
+                value = int(input("Window size: "))
+                if value < 1:
+                    raise ValueError
+            except ValueError:
+                questionary.print("❌ Enter a positive integer.", style="fg:red")
+                return
+        else:
+            value = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters).ask()
+            if value not in existing_parameters:
+                questionary.print("❌ Select a parameter from the list.", style="fg:red")
+                return
+        data.append(value)
 
     event_function(cursor, data)
-    questionary.print("Event calculated")
+    questionary.print("Event calculated.")
 
 
 def plot_indic(cursor, err_color, pointer):
 
     print(""*80, end="\r")
-    print("Plot")
+    print("✏️  Plot")
     print(" ")
 
     values = []
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_values = [row[1] for row in cursor.fetchall()]
-    #existing_values.remove("open_time")
+    existing_values.remove("open_time")
 
     while True:
-        choice = questionary.autocomplete("What Indicator do you want to plot?", 
+        choice = questionary.autocomplete("Select an indicator to plot:", 
                                           choices=existing_values,
                                           ).ask()
-        values.append(choice)
         if not choice in existing_values:
-            questionary.print("You must enter an Indicator present in the Indicator list", 
+            questionary.print("❌ Select an indicator from the list.", 
                               style=err_color)
         else:
-            rep = questionary.select("Do you wanna plot another Indicator ?", 
+            values.append(choice)
+            rep = questionary.select("Plot another indicator?", 
                                      ["Yes", "No"],
                                      pointer=pointer).ask()
             if rep == "No":
-                questionary.print(f"Indicators to plot : {values}", style="lightblue")
+                questionary.print(f"Indicators to plot: {values}", style="fg:lightblue")
                 break
 
    
-    rep = questionary.select("Do you wanna plot a Status ?", choices=["Yes", "No"], pointer=pointer).ask()
+    rep = questionary.select("Plot a status?", choices=["Yes", "No"], pointer=pointer).ask()
     if rep == "Yes":
         cursor.execute("""PRAGMA table_info(status)""")
         existing_status = [r[1] for r in cursor.fetchall()]
 
         existing_status.remove("open_time")
 
-        choice = questionary.autocomplete("What Status do you wanna plot ?", choices=existing_status).ask()
-        status = choice
+        if not existing_status:
+            questionary.print("No status is available yet.", style=err_color)
+            status = None
+        else:
+            choice = questionary.autocomplete("Select a status:", choices=existing_status).ask()
+            if choice not in existing_status:
+                questionary.print("❌ Select a status from the list.", style=err_color)
+                return
+            status = choice
 
     else:
         status = None
 
     
-    questionary.print("Ploting ...", style="fg:lightblue")
+    questionary.print("Plotting…", style="fg:lightblue")
 
     gp.plot(cursor, values, status)
 
 
-def delete_col(cursor, history, symbol, interval, source, pointer, config):
+def delete_col(cursor, history, symbol, interval, pointer, config):
 
     print(""*80, end="\r")
-    print("🗑️  Delete Column")
+    print("🗑️  Delete a Column")
     print("")
 
-    cursor.execute("""PRAGMA table_info(candles)""")
-    existing_parameters = [row[1] for row in cursor.fetchall()]
 
-    parameters = questionary.autocomplete(f"Select parameter : ", choices=existing_parameters).ask()
+    target = questionary.select("What would you like to delete?", ["An indicator", "A status"], pointer=pointer).ask()
 
-    if parameters == "Exit":
-        print(""*80, end="\r")
-        print(""*80, end="\r")
 
-    else:
-        rep = yes_no(f"Deleting {parameters} ? For real 🤨 ?", pointer, config)
+    if target == "An indicator":
 
-        if rep == "Yes":
-            cursor.execute(f"""
-                ALTER TABLE candles
-                DROP COLUMN {parameters}""")
-            history.append(f"{parameters} Deleted In {symbol} {interval} From {source}")
+        cursor.execute("""PRAGMA table_info(candles)""")
+        existing_parameters = [row[1] for row in cursor.fetchall()]
+        existing_parameters.remove("open_time")
+
+        if not existing_parameters:
+            questionary.print("No indicator can be deleted.", style="fg:yellow")
+            return
+        parameters = questionary.autocomplete("Select an indicator:", choices=existing_parameters).ask()
+
+        if parameters in existing_parameters:
+            rep = yes_no(f'Permanently delete "{parameters}"?', pointer, config)
+
+            if rep == "Yes":
+                cursor.execute(f"""
+                    ALTER TABLE candles
+                    DROP COLUMN {_quote_identifier(parameters)}""")
+                history.append(f"{parameters} deleted in {symbol} {interval}.")
+
+
+    if target == "A status":
+
+        cursor.execute("""PRAGMA table_info(status)""")
+        existing_parameters = [row[1] for row in cursor.fetchall()]
+        existing_parameters.remove("open_time")
+            
+        if not existing_parameters:
+            questionary.print("No status can be deleted.", style="fg:yellow")
+            return
+        parameters = questionary.autocomplete("Select a status:", choices=existing_parameters).ask()
+
+        if parameters in existing_parameters:
+            rep = yes_no(f'Permanently delete "{parameters}"?', pointer, config)
+
+            if rep == "Yes":
+                cursor.execute(f"""
+                    ALTER TABLE status
+                    DROP COLUMN {_quote_identifier(parameters)}""")
+                history.append(f"{parameters} deleted in {symbol} {interval}.")
          
+
+     
 def action_history(history):
 
     print(""*80, end="\r")
@@ -408,7 +527,7 @@ def action_history(history):
     print("")
 
     if len(history) == 0:
-        print("The Action History is empty")
+        print("The action history is empty.")
 
         
     else:
@@ -417,18 +536,17 @@ def action_history(history):
 
 def take_look(history, pointer, function_dict, cursor, config):
     print(""*80, end="\r")
-    print("👀 Take a Look")
+    print("👀 Inspect Data")
     print("")
 
     cursor.execute("""PRAGMA table_info(candles)""")
     indicator_dict = [row[1] for row in cursor.fetchall()]
     
 
-    look = questionary.select("What do you wanna look ?", ["Indicators Dict", "Function Dict"], pointer=pointer, style=config).ask()
+    look = questionary.select("What would you like to inspect?", ["Indicators", "Available functions"], pointer=pointer, style=config).ask()
     
-    if look == "Indicators Dict":
-        copy = questionary.select("Indicators Dict", choices=indicator_dict, pointer=pointer, style=config).ask()
-        print(copy)
+    if look == "Indicators":
+        copy = questionary.select("Indicators:", choices=indicator_dict, pointer=pointer, style=config).ask()
         nb = cursor.execute(f"""
                                 SELECT COUNT(DISTINCT {copy})
                                 FROM candles
@@ -440,30 +558,22 @@ def take_look(history, pointer, function_dict, cursor, config):
                                 ORDER BY open_time
             """).fetchall()
 
-        last_values = [r[0] for r in rows][-8 : -1]
+        last_values = [r[0] for r in rows][-8:]
 
         questionary.print(f"Calculated over {nb} candles", style="fg:blue")
-        questionary.print("Last Values : ", style="fg:blue")
+        questionary.print("Last values:", style="fg:blue")
 
         for i in range(len(last_values)):
             questionary.print(f"{last_values[i]}", style="fg:red")
 
 
-    if look == "Function Dict":
-        copy = questionary.select("Function Dict", choices=function_dict, pointer=pointer).ask()
-        print(copy)
+    if look == "Available functions":
+        copy = questionary.select("Available functions:", choices=function_dict, pointer=pointer).ask()
 
-    res = questionary.select("What do you wanna do ?", 
-                             choices=["Go back to '👀 Take a Look'", f"Copy '{copy}' and go back to '👀 Take a Look'"], 
-                             pointer=pointer).ask()
-    if res == f"Copy '{copy}' and go back to '👀 Take a Look'":
-        history.append(f"{copy} Copied")
-        return copy
+    history.append(f"Inspected {copy}.")
+    return None
 
-    else:
-        return None
-
-def settings(color):
+def settings(pointer, logo_color, questions_color, answers_color, err_color, active_color):
     color_list = [
             "black",
             "red",
@@ -487,13 +597,30 @@ def settings(color):
     print("⚙️ Settings")
     print("")
 
-    set = questionary.select("What do you wanna set ?", choices=["Colors", "Pointer"])
+    setting = questionary.select("What would you like to change?", choices=["Colors", "Pointer"]).ask()
 
-    if set == "Color":
-        set = questionary.select("Which color do you wanna Set ?", choices=["Color of the Logo", 
-                                                                            "Color of Questions", 
-                                                                            "Color of Answers", 
-                                                                            "Color of Errors", 
-                                                                            "Color of Active Symbol"]).ask()
+    if setting == "Pointer":
+        pointer = questionary.select("Choose a pointer:", choices=["▶︎", "❯", "➜", "→"]).ask()
+    else:
+        labels = {
+            "Logo": "logo_color",
+            "Questions": "questions_color",
+            "Answers": "answers_color",
+            "Errors": "err_color",
+            "Active database": "active_color",
+        }
+        label = questionary.select("Choose an element:", choices=list(labels)).ask()
+        color = questionary.select("Choose a color:", choices=color_list).ask()
+        color = f"fg:{color}"
+        if labels[label] == "logo_color":
+            logo_color = color
+        elif labels[label] == "questions_color":
+            questions_color = color
+        elif labels[label] == "answers_color":
+            answers_color = color
+        elif labels[label] == "err_color":
+            err_color = color
+        else:
+            active_color = color
 
-
+    return pointer, logo_color, questions_color, answers_color, err_color, active_color

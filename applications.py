@@ -71,8 +71,6 @@ def general_application(cursor, name, after_name, function, window, parameters):
         for i in range(len(parameters)):
             name += f"_{parameters[i]}"
 
-        name += after_name
-
 
     if window > 1:
         name = name + "_" + str(window)
@@ -115,6 +113,13 @@ def general_application(cursor, name, after_name, function, window, parameters):
     open_times = [o[0] for o in open_times]
 
     total = len(open_times)
+
+    if not parameters:
+        raise ValueError("Select at least one parameter.")
+    if total < window:
+        raise ValueError(
+            f"Not enough candles for a window of {window}. Available candles: {total}."
+        )
 
     results = []
 

@@ -6,21 +6,21 @@ def vwema(data):
     sum  = 0.
     sumv = 0.
     sump = 0.
-    p    = 1.5
 
     vol = data[0]
     price = data[1]
+    power = data[2]
 
     for i in range(vol.size):
         sumv += vol[i] 
 
     for i in range(len(vol)):
-        sump += vol[i]**p
+        sump += vol[i]**power
 
     sump = sump/sumv
 
     for i in range(len(vol)) : 
-        w = vol[i]**p / sumv #calcul de la taille du vol par rapport a sumv
+        w = vol[i]**power / sumv #calcul de la taille du vol par rapport a sumv
         sum += price[i]*w    # plus la taille du vol est grande plus le poid dans la moyenne est important 
 
     result = sum/sump
@@ -28,7 +28,9 @@ def vwema(data):
 
     return d 
 
-def correlation(x, y):
+def correlation(data):
+    x = data[0]
+    y = data[1]
     moy_x = sum(x)/len(x)
     moy_y = sum(y)/len(y)
 
@@ -480,6 +482,43 @@ def william(data):
     wil = (high - close)*-100 / (high-low)
     
     return wil
+
+
+# Functions exposed by the terminal indicator interface.
+# Each value is: (calculation function, number of data series, recommended columns).
+# Database helpers such as ``column_exists`` and ``peaks_data`` are deliberately
+# excluded: they do not calculate an indicator from candle columns.
+
+function_dict = {
+    "vwema":       (vwema, 3, ["volume", "close", "power"]),
+    "correlation": (correlation, 2, ["close", "volume"]),
+    "sma":         (sma, 1, ["close", "high", "low", "open", "volume"]),
+    "ema":         (ema, 1, ["close", "open", "high", "low"]),
+    "wma":         (wma, 1, ["close", "open", "high", "low"]),
+    "vwma":        (vwma, 2, ["close", "volume"]),
+    "amplitude":   (amplitude, 2, ["high", "low"]),
+    "atr":         (atr, 3, ["open", "high", "low"]),
+    "relative":    (relative, 2, ["close", "sma"]),
+    "relative_gap": (relative_gap, 2, ["close", "sma"]),
+    "return_":     (return_, 2, ["close", "close"]),
+    "log_return":  (log_return, 2, ["close", "close"]),
+    "slope":       (slope, 1, ["close", "sma", "ema"]),
+    "linear_slope": (linear_slope, 1, ["close", "sma", "ema"]),
+    "close_position": (close_position, 3, ["close", "high", "low"]),
+    "std_dev":     (std_dev, 1, ["close", "volume"]),
+    "zscore":      (zscore, 3, ["close", "sma", "std_dev"]),
+    "log_":        (log_, 1, ["close", "volume"]),
+    "bol_band_up": (bol_band_up, 2, ["sma", "std_dev"]),
+    "bol_band_down": (bol_band_down, 2, ["sma", "std_dev"]),
+    "avg_gain":    (avg_gain, 1, ["close"]),
+    "avg_loss":    (avg_loss, 1, ["close"]),
+    "rsi":         (rsi, 2, ["avg_gain", "avg_loss"]),
+    "stochastic":  (stochastic, 3, ["close", "high", "low"]),
+    "tp":          (tp, 3, ["close", "high", "low"]),
+    "cci":         (cci, 1, ["tp"]),
+    "roc":         (roc, 1, ["close"]),
+    "william":     (william, 3, ["close", "high", "low"]),
+}
 
 
 

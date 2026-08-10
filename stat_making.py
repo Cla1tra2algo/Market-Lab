@@ -44,12 +44,11 @@ def stat_onevar(cursor, status, data, inter):
         # Nombre de pics
         cursor.execute(f"""
             SELECT COUNT(*)
-            FROM status
-            WHERE {status} > 0
-            AND (SELECT {data}
-                FROM candles) >= ?
-            AND (SELECT {data}
-                FROM candles)  < ?
+            FROM status AS s
+            JOIN candles AS c ON c.open_time = s.open_time
+            WHERE s."{status}" > 0
+            AND c."{data}" >= ?
+            AND c."{data}" < ?
         """, (borne_min, borne_max))
 
         nb_peaks = cursor.fetchone()[0]
@@ -57,12 +56,11 @@ def stat_onevar(cursor, status, data, inter):
         # Nombre de creux
         cursor.execute(f"""
             SELECT COUNT(*)
-            FROM status
-            WHERE {status} < 0
-            AND (SELECT {data}
-                FROM candles) >= ?
-            AND (SELECT {data}
-                FROM candles)  < ?
+            FROM status AS s
+            JOIN candles AS c ON c.open_time = s.open_time
+            WHERE s."{status}" < 0
+            AND c."{data}" >= ?
+            AND c."{data}" < ?
         """, (borne_min, borne_max))
 
         nb_lows = cursor.fetchone()[0]
@@ -98,7 +96,7 @@ def stat_onevar(cursor, status, data, inter):
     return stat_table
 
 
-def stat_twovar(cursor, data_1, data_2, inter):
+def stat_twovar(cursor, status, data_1, data_2, inter):
 
 
     print("\r" + " " * 80, end="\r")
@@ -124,7 +122,7 @@ def stat_twovar(cursor, data_1, data_2, inter):
 
         stat_table.append([])
 
-        borne_min_2 = bornes_1[i]
+        borne_min_2 = bornes_2[i]
         borne_max_2 = bornes_2[i + 1]
 
         for n in range(inter):
@@ -133,42 +131,38 @@ def stat_twovar(cursor, data_1, data_2, inter):
             borne_max_1 = bornes_1[n + 1]
 
             cursor.execute(f"""
-                SELECT COUNT (*)
-                FROM candles 
-                WHERE statut = 100
-                AND {data_1} >= ?
-                AND {data_1} < ?
-                AND {data_2} >= ?
-                AND {data_2 } < ?
-            """, (borne_min_1, borne_max_1, borne_min_2, borne_max_2 ))
+                SELECT COUNT(*)
+                FROM candles AS c
+                JOIN status AS s ON s.open_time = c.open_time
+                WHERE s."{status}" > 0
+                AND c."{data_1}" >= ? AND c."{data_1}" < ?
+                AND c."{data_2}" >= ? AND c."{data_2}" < ?
+            """, (borne_min_1, borne_max_1, borne_min_2, borne_max_2))
 
 
             nb_peaks = cursor.fetchall()[0][0]
 
             cursor.execute(f"""
-                SELECT COUNT (*)
-                FROM candles 
-                WHERE statut = -100
-                AND {data_1} >= ?
-                AND {data_1} < ?
-                AND {data_2} >= ?
-                AND {data_2 } < ?
-            """, (borne_min_1, borne_max_1, borne_min_2, borne_max_2 ))
+                SELECT COUNT(*)
+                FROM candles AS c
+                JOIN status AS s ON s.open_time = c.open_time
+                WHERE s."{status}" < 0
+                AND c."{data_1}" >= ? AND c."{data_1}" < ?
+                AND c."{data_2}" >= ? AND c."{data_2}" < ?
+            """, (borne_min_1, borne_max_1, borne_min_2, borne_max_2))
 
             nb_lows = cursor.fetchall()[0][0]
 
             cursor.execute(f"""
                 SELECT COUNT (*)
-                FROM candles 
-                WHERE {data_1} >= ?
-                AND {data_1} < ?
-                AND {data_2} >= ?
-                AND {data_2 } < ?
-            """, (borne_min_1, borne_max_1, borne_min_2, borne_max_2 ))
+                FROM candles AS c
+                WHERE c."{data_1}" >= ? AND c."{data_1}" < ?
+                AND c."{data_2}" >= ? AND c."{data_2}" < ?
+            """, (borne_min_1, borne_max_1, borne_min_2, borne_max_2))
 
             nb_candles = cursor.fetchall()[0][0]
 
-            stat_table[i].append([nb_peaks * 100 / nb_candles if nb_candles else 0])
+            stat_table[i].append(nb_peaks * 100 / nb_candles if nb_candles else 0)
 
             total_computed += 1
 
@@ -186,7 +180,7 @@ def stat_twovar(cursor, data_1, data_2, inter):
         aspect="auto"
     )
 
-    plt.colorbar(label="Probabilité de pic")
+    plt.colorbar(label=f"Probability of {status}")
 
     plt.xlabel(f"{data_1}")
     plt.ylabel(f"{data_2}")
