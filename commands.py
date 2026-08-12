@@ -8,26 +8,14 @@ import graph_plot as gp
 import event as ev
 import stat_making as sm
 from pathlib import Path
+import os
 import re
+import shlex
+import subprocess
 
+from importlib.util import module_from_spec, spec_from_file_location
+from inspect import signature
 
-
-HYPERLIQUID_TIMEFRAMES = [
-    "1m",
-    "3m",
-    "5m",
-    "15m",
-    "30m",
-    "1h",
-    "2h",
-    "4h",
-    "8h",
-    "12h",
-    "1d",
-    "3d",
-    "1w",
-    "1M",
-]
 
 BINANCE_TIMEFRAMES = [
     "1s",
@@ -57,28 +45,122 @@ logo = """
 
 
 
-CUSTOM_FILE = Path.cwd() / "custom_indicators.py"
+CUSTOM_FILE = Path(__file__).resolve().parent / "custom_indicators.py"
 
-CUSTOM_TEMPLATE = """
+CUSTOM_TEMPLATE = '''"""Personal Market Lab indicators and events.
 
-# This is an example, for more informations, read the README.md
-
-def function_1(data)
-    parameter_1 = data[0]
-    parameter_2 = data[1]
-
-    return parameter_1
-
-function_dict = {
-    "function_1": (function_1, 2, ["parameter_1", "parameter_2"])
-}
-
+Only load code that you wrote or trust: this file is executed by Market Lab.
 """
 
-def create_custom_indicators_file():
+
+def median_price(data):
+    """Return the midpoint of the latest high and low values."""
+    high = data[0]
+    low = data[1]
+    return (high[-1] + low[-1]) / 2
+
+
+def close_above_open(cursor, columns):
+    """Create a status equal to 1 when close is above open, otherwise 0."""
+    close_column, open_column = columns
+    rows = cursor.execute(
+        f"SELECT open_time, \\"{close_column}\\", \\"{open_column}\\" FROM candles ORDER BY open_time"
+    ).fetchall()
+
+    status_columns = {row[1] for row in cursor.execute("PRAGMA table_info(status)")}
+    if "close_above_open" not in status_columns:
+        cursor.execute("ALTER TABLE status ADD COLUMN close_above_open")
+    cursor.executemany(
+        "UPDATE status SET close_above_open = ? WHERE open_time = ?",
+        [(int(close > open_), open_time) if close is not None and open_ is not None else (0, open_time)
+         for open_time, close, open_ in rows],
+    )
+    cursor.connection.commit()
+
+
+indicator_dict = {
+    "median_price": (median_price, 2, ["high", "low"]),
+}
+
+event_dict = {
+    "close_above_open": (close_above_open, 2, ["close", "open"]),
+}
+'''
+
+def _open_in_editor(path, err_color):
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        questionary.print(f"Open this file in your code editor: {path}", style="fg:blue")
+        return
+
+    try:
+        subprocess.Popen(shlex.split(editor) + [str(path)])
+    except (OSError, ValueError) as error:
+        questionary.print(f"❌ Unable to open the editor: {error}", style=err_color)
+        questionary.print(f"Open this file manually: {path}", style="fg:blue")
+
+
+def create_custom_indicators_file(err_color):
+
     if CUSTOM_FILE.exists():
         questionary.print(f"Custom indicator file already exists: {CUSTOM_FILE}", style="fg:yellow")
-        return
+        _open_in_editor(CUSTOM_FILE, err_color)
+        return False
+
+    CUSTOM_FILE.write_text(CUSTOM_TEMPLATE, encoding="utf-8")
+
+    questionary.print(f"Custom indicator file created: {CUSTOM_FILE}",
+                      style="fg:green")
+    _open_in_editor(CUSTOM_FILE, err_color)
+    return True
+
+
+def _validate_custom_registry(registry, registry_name, expected_function_parameters):
+    if not isinstance(registry, dict):
+        raise ValueError(f"{registry_name} must be a dictionary.")
+
+    for name, definition in registry.items():
+        if not _identifier_is_valid(name):
+            raise ValueError(f"Invalid {registry_name} name: {name!r}.")
+        if not isinstance(definition, tuple) or len(definition) != 3:
+            raise ValueError(f"{name!r} must be a tuple: (function, parameter_count, recommendations).")
+        function, parameter_count, recommendations = definition
+        if not callable(function) or not isinstance(parameter_count, int) or parameter_count < 1:
+            raise ValueError(f"Invalid definition for {name!r}.")
+        if not isinstance(recommendations, list) or not all(isinstance(item, str) for item in recommendations):
+            raise ValueError(f"Recommendations for {name!r} must be a list of strings.")
+        if len(recommendations) != parameter_count:
+            raise ValueError(f"{name!r} expects {parameter_count} recommendations.")
+        try:
+            signature(function).bind(*([None] * expected_function_parameters))
+        except TypeError as error:
+            raise ValueError(
+                f"{name!r} must accept {expected_function_parameters} argument(s)."
+            ) from error
+
+def load_custom_indicators_and_events(err_color):
+    if not CUSTOM_FILE.exists():
+        questionary.print("No custom_indicators.py file found.",
+                          style="fg:yellow")
+        return None
+
+    try:
+        spec = spec_from_file_location("custom_indicators", CUSTOM_FILE)
+        module = module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        custom_indicator_dict = getattr(module, "indicator_dict", {})
+        custom_event_dict = getattr(module, "event_dict", {})
+        _validate_custom_registry(custom_indicator_dict, "indicator_dict", 1)
+        _validate_custom_registry(custom_event_dict, "event_dict", 2)
+        return custom_indicator_dict, custom_event_dict
+    
+
+    except Exception as error:
+        questionary.print(f"❌ Unable to load custom indicators and events: {error}", style=err_color)
+
+        return None
+
 
 
 def checking_file(chemin, err_color):
@@ -104,7 +186,6 @@ def checking_file(chemin, err_color):
         return False
 
     return True
-
 
 def turn_page(logo, symbol, interval, logo_color, active_color):
 
@@ -140,16 +221,13 @@ def _database_schema_is_valid(path):
     except sqlite3.Error:
         return False
 
-
 def _identifier_is_valid(value):
     return isinstance(value, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is not None
-
 
 def _quote_identifier(value):
     if not _identifier_is_valid(value):
         raise ValueError("Invalid database identifier.")
     return f'"{value}"'
-
 
 def _database_details(path):
     stem = Path(path).stem
@@ -157,7 +235,6 @@ def _database_details(path):
     if len(parts) < 3 or parts[0] != "data" or parts[2] not in BINANCE_TIMEFRAMES:
         raise ValueError("The database name must follow data_SYMBOL_TIMEFRAME.db.")
     return parts[1], parts[2]
-
 
 def data_base(pointer, logo, config, err_color):
 
@@ -264,7 +341,7 @@ def download_data(cursor, symbol, interval, timestamp, conn, history):
     
     history.append(f"{symbol} {interval} Downloaded ")
    
-def calculate_indic(function_dict, function_list, cursor, conn, history, symbol, interval, pointer, config, err_color):
+def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbol, interval, pointer, config, err_color):
 
     print(""*80, end="\r")
     print("📈 Calculate Indicators")
@@ -284,15 +361,15 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
                                         ["No", "Yes"], pointer=pointer, style=config).ask()
 
     while True : 
-        function_ = questionary.autocomplete("Select a function:", choices=function_list, style=config).ask()
+        indicator_ = questionary.autocomplete("Select an indicator:", choices=indicator_list, style=config).ask()
 
-        if function_ == "":
+        if indicator_ == "":
             print(""*80, end="\r")
             print("")
             questionary.print("❌ Select a function.", style=err_color)
 
-        elif function_ in function_list:
-            function_ = function_dict[function_]
+        elif indicator_ in indicator_list:
+            indicator_ = indicator_dict[indicator_]
             break
         else: 
             print(""*80, end="\r")
@@ -328,11 +405,11 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
     existing_parameters = [row[1] for row in cursor.fetchall()]
 
 
-    if type(function_[-1]) is list:
+    if type(indicator_[-1]) is list:
         print("")
-        questionary.print(f"Recommended parameters: {function_[-1]}", style="fg:blue")
+        questionary.print(f"Recommended parameters: {indicator_[-1]}", style="fg:blue")
 
-    for i in range(function_[1]):
+    for i in range(indicator_[1]):
 
         parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
         if parameter not in existing_parameters:
@@ -340,16 +417,38 @@ def calculate_indic(function_dict, function_list, cursor, conn, history, symbol,
             return
         parameters.append(parameter)
 
-    app.general_application(cursor, name, after_name, function_[0], window, parameters)
+    app.general_application(cursor, name, after_name, indicator_[0], window, parameters)
     conn.commit()
     history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
-def manage_custom_indicators(pointer):
+def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dict, custom_event_dict):
     rep = questionary.select("Actions : ", ["Create custom_indicators.py", 
-                                            "Open / edit custom_indicators.py", 
-                                            "List available custom indicators", 
+                                            "List available custom indicators and events",
                                             "Reload custom indicators",
                                             "Back to main menu"], pointer=pointer).ask()
+
+    if rep == "Create custom_indicators.py":
+        create_custom_indicators_file(err_color)
+        return None
+
+    if rep == "List available custom indicators and events":
+        indicators_list = list(custom_indicator_dict.keys())
+        event_list = list(custom_event_dict.keys())
+
+        questionary.print(f"Indicators dictionary: {indicators_list}", style="fg:lightblue")
+        questionary.print(f"Events dictionary: {event_list}", style="fg:lightblue")
+
+    if rep == "Reload custom indicators":
+        registries = load_custom_indicators_and_events(err_color)
+        if registries is None:
+            return None
+        custom_indicator_dict, custom_event_dict = registries
+        questionary.print(f"{len(custom_indicator_dict)} custom indicator(s) loaded; {len(custom_event_dict)} custom event(s) loaded.", style="fg:green")
+        return custom_indicator_dict, custom_event_dict
+
+    return None
+
+    
 
 def calculate_stats(cursor, pointer):
 
@@ -392,7 +491,6 @@ def calculate_stats(cursor, pointer):
             return
         sm.stat_twovar(cursor, status, parameter, second_parameter, int(x_axis))
         
-
 def calculate_event(event_dict, pointer, cursor):
 
     print(""*80, end="\r")
@@ -431,7 +529,6 @@ def calculate_event(event_dict, pointer, cursor):
 
     event_function(cursor, data)
     questionary.print("Event calculated.")
-
 
 def plot_indic(cursor, err_color, pointer):
 
@@ -486,7 +583,6 @@ def plot_indic(cursor, err_color, pointer):
 
     gp.plot(cursor, values, status)
 
-
 def delete_col(cursor, history, symbol, interval, pointer, config):
 
     print(""*80, end="\r")
@@ -538,8 +634,6 @@ def delete_col(cursor, history, symbol, interval, pointer, config):
                     DROP COLUMN {_quote_identifier(parameters)}""")
                 history.append(f"{parameters} deleted in {symbol} {interval}.")
          
-
-     
 def action_history(history):
 
     print(""*80, end="\r")
@@ -554,7 +648,7 @@ def action_history(history):
         for i in range(len(history)):
             print(history[i])
 
-def take_look(history, pointer, function_dict, cursor, config):
+def take_look(history, pointer, indicator_dict, cursor, config):
     print(""*80, end="\r")
     print("👀 Inspect Data")
     print("")
@@ -588,7 +682,7 @@ def take_look(history, pointer, function_dict, cursor, config):
 
 
     if look == "Available functions":
-        copy = questionary.select("Available functions:", choices=function_dict, pointer=pointer).ask()
+        copy = questionary.select("Available indicators:", choices=indicator_dict, pointer=pointer).ask()
 
 
     if look == "Status":

@@ -489,7 +489,7 @@ def william(data):
 # Database helpers such as ``column_exists`` and ``peaks_data`` are deliberately
 # excluded: they do not calculate an indicator from candle columns.
 
-function_dict = {
+indicator_dict = {
     "vwema":       (vwema, 3, ["volume", "close", "power"]),
     "correlation": (correlation, 2, ["close", "volume"]),
     "sma":         (sma, 1, ["close", "high", "low", "open", "volume"]),

@@ -156,7 +156,6 @@ def highest_lowest(cursor, data):
                 """).fetchall()) < window:
         raise ValueError("The window size must not exceed the number of candles.")
 
-    data_list = rows
     values_list = [r[0] for r in rows]
     open_times = [r[1] for r in rows]
 
@@ -200,4 +199,3 @@ def highest_lowest(cursor, data):
     cursor.executemany("UPDATE status SET highest_lowest = ? WHERE open_time = ?", results)
     cursor.connection.commit()
 
-        

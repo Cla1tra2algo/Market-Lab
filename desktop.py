@@ -31,15 +31,20 @@ active_file = "fg:yellow"
 style = questionary.Style([("question", questions_color), ("answer", answers_color)])
 
 
-function_dict = mf.function_dict
+base_indicator_dict = mf.indicator_dict
+custom_indicator_dict = {}
+indicator_dict = dict(base_indicator_dict)
 
-event_dict = {
+base_event_dict = {
     "cross" : (ev.cross, 2, ["sma"]),
     "highest_lowest" : (ev.highest_lowest, 2, ["close", "window"])
 }
+custom_event_dict = {}
+event_dict = dict(base_event_dict)
 
 
-function_list = list(function_dict.keys())
+
+indicator_list = list(indicator_dict.keys())
 
 values_list = []
 questionary.print(logo, style=logo_color)
@@ -67,7 +72,7 @@ while True :
                                 "📁 Open or Create a Database",
                                 "💾 Download Data",
                                 "📈 Calculate Indicators",
-                                "🧩 Manage Custom Indicators",
+                                "🧩 Manage Custom Indicators and Events",
                                 "📊 Calculate Statistics",
                                 "🎉 Calculate Events",
                                 "✏️  Plot",
@@ -91,18 +96,34 @@ while True :
         skip(pointer, config=style)
         turn_page(logo, symbol, interval, active_color=active_file, logo_color=logo_color)
         
-
     if command == "💾 Download Data":
-        run_safely(download_data, cursor, symbol, interval, timestamp, conn, history)
-        res = skip(pointer, config=style)
+        while True:
+            run_safely(download_data, cursor, symbol, interval, timestamp, conn, history)
+            res = skip(pointer, config=style)
+            turn_page(logo, symbol, interval, logo_color, active_color=active_file)
+            if res == "Yes":
+                break
+            
+    if command == "🧩 Manage Custom Indicators and Events":
+
+        custom_registries = run_safely(
+            manage_custom_indicators_and_events,
+            pointer,
+            err_color,
+            custom_indicator_dict,
+            custom_event_dict,
+        )
+        if custom_registries is not None:
+            custom_indicator_dict, custom_event_dict = custom_registries
+            indicator_dict = {**base_indicator_dict, **custom_indicator_dict}
+            event_dict = {**base_event_dict, **custom_event_dict}
+            indicator_list = list(indicator_dict.keys())
         turn_page(logo, symbol, interval, logo_color, active_color=active_file)
-
-
 
     if command == "📈 Calculate Indicators":
         while True:
-            run_safely(calculate_indic, function_dict=function_dict, 
-                            function_list=function_list, 
+            run_safely(calculate_indic, indicator_dict=indicator_dict, 
+                            indicator_list=indicator_list, 
                             cursor=cursor, 
                             history=history, 
                             symbol=symbol, 
@@ -121,7 +142,6 @@ while True :
 
         run_safely(calculate_stats, cursor, pointer)
 
-
     if command == "🎉 Calculate Events":
 
         while True :
@@ -136,7 +156,6 @@ while True :
 
             if res == "Yes":
                 break
-
         
     if command == "✏️  Plot":
 
@@ -150,9 +169,7 @@ while True :
             turn_page(logo, symbol, interval, logo_color, active_color=active_file)
             if res == "Yes":
                 break
-
-
-        
+   
     if command == "🗑️  Delete a Column":
         while True:
             run_safely(delete_col, cursor, history, symbol, interval, pointer, config=style)
@@ -187,7 +204,7 @@ while True :
         
     if command == "👀 Take a Look":
         while True:
-            res = take_look(history, pointer, function_dict, cursor, config=style)
+            res = take_look(history, pointer, indicator_dict, cursor, config=style)
             if res != None:
                 copy = res
             turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
