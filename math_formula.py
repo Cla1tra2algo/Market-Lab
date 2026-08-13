@@ -9,10 +9,13 @@ def vwema(data):
 
     vol = data[0]
     price = data[1]
-    power = data[2]
+    power = 1.5
 
     for i in range(vol.size):
         sumv += vol[i] 
+
+    if sumv == 0:
+        return None
 
     for i in range(len(vol)):
         sump += vol[i]**power
@@ -55,9 +58,12 @@ def correlation(data):
 
     conv /= len(x)
 
-    r = conv / (sig_x*sig_y)
+    if sig_x*sig_y == 0:
+        return 1
 
-    return r
+    else:
+        r = conv / (sig_x*sig_y)
+        return r
 
 def column_exists(cursor, table, column):
     cursor.execute(f"PRAGMA table_info({table})")
@@ -218,23 +224,33 @@ def peaks_data(cursor, prominence_para):
     cursor.connection.commit()
 
 def sma(data):
+
+    if None in data[0]:
+        return None
+
     return sum(data[0])/len(data[0])
 
 def ema(data):
-    open = data[0]
-    period = len(open)
+    close = data[0]
+    period = len(close)
+    k = 2/(period + 1)
+
 
     if type(data[-1]) != str :
-        ema_st = sum(open)
+        ema_st = sum(close) / period
         return ema_st
     else :
-        previous_ema = data[-1]
-        alpha = 2/(period+1)
-        ema = previous_ema + alpha * (open - previous_ema)
+        previous_ema = float(data[-1])
+
+        ema = close[-1]*k + previous_ema * (1-k)
         return ema
 
 def wma(data):
     open = data[0]
+
+    if None in data[0]:
+        return None
+
     n = len(open)
     weights = np.arange(1, n + 1)
     return np.sum(open * weights) / np.sum(weights)
@@ -242,12 +258,19 @@ def wma(data):
 def vwma(data):
     open = data[0]
     volume = data[1]
+
+    if None in volume or None in open:
+        return None
+
+    if sum(volume) == 0:
+        return None
+
     return sum(open*volume)/sum(volume)
 
 def amplitude(data):
 
-    if data[0][0] != None and data[1][0] != None :
-        ampl = data[0][0] - data[1][0]
+    if data[0][-1] != None and data[1][-1] != None :
+        ampl = data[0][-1] - data[1][-1]
         return abs(ampl)
 
     else:
@@ -257,7 +280,7 @@ def atr(data):
 
     high = data[1]
     low = data[2]
-    open = data[0]
+    close = data[0]
 
     period = len(high)
 
@@ -267,8 +290,8 @@ def atr(data):
         for i in range(period):
             tr = max(
                 high[i] - low[i],
-                abs(high[i] - open[i]),
-                abs(low[i] - open[i])
+                abs(high[i] - close[i]),
+                abs(low[i] - close[i])
             )
             tr_list.append(tr)
             
@@ -280,79 +303,117 @@ def atr(data):
             
         tr = max(
                     high[-1] - low[-1],
-                    abs(high[-1] - open[-1]),
-                    abs(low[-1]  - open[-1])
+                    abs(high[-1] - open[-2]),
+                    abs(low[-1]  - open[-2])
                 )
         atr = ((previous_atr * (period - 1)) + tr) / period
         return atr
 
 def relative(data):
-    if data[1][0] == None or data[0][0] == None:
+    if data[1][-1] == None or data[0][-1] == None:
         return None
+
+    elif data[1][-1] == 0 or data[0][-1] == 0:
+        return None
+    
     else : 
-        return data[0][0]/data[1][0]
+        return data[0][-1]/data[1][-1]
 
 def relative_gap(data):
-    if data[1][0] is None or data[0][0] is None:
+    if data[1][-1] is None or data[0][-1] is None or data[1][-1] == 0:
         return None
     else : 
-        return (data[0][0] - data[1][0])/data[1][0]
+        return (data[0][-1] - data[1][-1])/data[1][-1]
         
 def return_(data):
     start = data[0][0]
-    end = data[1][-1]
+    end = data[0][-1]
+
+    if end is None or start is None:
+        return None
+
     return (end-start)/start
 
 def log_return(data):
     start = data[0][0]
-    end = data[1][-1]
+    end = data[0][-1]
+
+    if start is None:
+        return None
+    if start == 0:
+        return None
+
+    if end is None:
+        return None
+    if end == 0:
+        return None
+
     r = log(end/start)
     return r 
 
 def slope(data):
-    return data[0][-1] - data[0][0] / len(data[0])
+    if None in data[0]:
+        return None
+    return (data[0][-1] - data[0][0]) / len(data[0])
 
 def linear_slope(data):
     points = data[0]
     period = len(data[0])
 
-    x = np.arrange(period)
+    points.remove(None)
+
+    x = np.arange(period)
     slope = np.polyfit(x, points, 1)[0]
 
     return slope
 
 def close_position(data):
-    close = data[0][0]
-    high = data[1][0]
-    low = data[2][0]
+    close = data[0][-1]
+    high = data[1][-1]
+    low = data[2][-1]
+
+    if None in (close, high, low):
+        return None
+
+    if high-low == 0:
+        return 0
 
     position = (close-low)/(high-low)
 
     return position
 
 def std_dev(data):
+    if None in data[0]:
+        return None
     return np.std(data[0])
 
 def zscore(data):
 
-    values = data[0][0]
-    moy    = data[1][0]
-    sigma  = data[2][0]
+    values = data[0][-1]
+    moy    = data[1][-1]
+    sigma  = data[2][-1]
 
     if moy is None or values is None or sigma is None:
         return None
 
     var = values - moy
+
+    if sigma == 0:
+        return 0
+
     z = var/sigma
 
     return z
 
 def log_(data):
-    return log(data)
+    return log(data[0][-1])
 
 def bol_band_up(data):
-    sma = data[0][0]
-    dev = data[1][0]
+    sma = data[0][-1]
+    dev = data[1][-1]
+
+    if sma is None:
+        return None
 
     if dev is not None :
         return sma + 2*dev
@@ -361,8 +422,11 @@ def bol_band_up(data):
         return None
 
 def bol_band_down(data):
-    sma = data[0][0]
-    dev = data[1][0]
+    sma = data[0][-1]
+    dev = data[1][-1]
+
+    if sma is None:
+        return None
 
     if dev is not None :
         return sma - 2*dev
@@ -374,9 +438,12 @@ def avg_gain(data):
 
     close = data[0]
     previous_data = data[-1]
-    period = len(close) -1
+    period = len(close) 
 
     moy_gain = 0
+
+    if period == 1:
+        return None
 
     for i in range(len(close)-1):
         delta = close[i+1] - close[i]
@@ -396,9 +463,12 @@ def avg_loss(data):
 
     close = data[0]
     previous_data = data[-1]
-    period = len(close) -1
+    period = len(close)
 
     moy_loss = 0
+
+    if period == 1:
+        return None
 
     for i in range(len(close)-1):
         delta = close[i+1] - close[i]
@@ -415,8 +485,8 @@ def avg_loss(data):
         return (previous_data*(period-1)+(moy_loss*period))/period
 
 def rsi(data):
-    avg_gain = data[0][0]
-    avg_loss = data[1][0]
+    avg_gain = data[0][-1]
+    avg_loss = data[1][-1]
 
     if avg_gain is None or avg_loss is None:
         return None
@@ -436,17 +506,26 @@ def stochastic(data):
     high  = data[1]
     low   = data[2]
 
+    if None in close or None in high or None in low:
+        return None
+
     high = max(high)
     low  = min(low)
+
+    if high - low == 0:
+        return None
 
     k = 100 * (close-low)/(high-low)
 
     return k 
 
 def tp(data):
-    close = data[0][0]
-    high = data[1][0]
-    low = data[2][0]
+    close = data[0][-1]
+    high = data[1][-1]
+    low = data[2][-1]
+
+    if None in (close, high, low):
+        return None
 
     tp = (close + low + high) / 3
 
@@ -455,6 +534,10 @@ def tp(data):
 def cci(data):
     tp_ = data[0]
     sma_tp = sum(tp_)/len(tp_)
+
+    if None in tp_ :
+        return None
+
     period = len(tp_)
 
     md = 0
@@ -464,20 +547,33 @@ def cci(data):
 
     md = md/period
 
+    if md == 0:
+        return None
+
     cci = (tp_[-1] - sma_tp) / (0.015 * md)
 
     return cci
 
 def roc(data):
     close = data[0]
-    roc = close[-1]-close[0]*100/ close[0]
+
+    if None in data[0]:
+        return None
+    
+    roc = (close[-1]-close[0])*100 / close[0]
 
     return roc
 
 def william(data):
-    close = data[0][0]
-    high = data[1][0]
-    low = data[2][0]
+    close = data[0][-1]
+    high = data[1][-1]
+    low = data[2][-1]
+
+    if None in (close, high, low):
+        return None
+
+    if high-low == 0:
+        return None
 
     wil = (high - close)*-100 / (high-low)
     
@@ -490,7 +586,7 @@ def william(data):
 # excluded: they do not calculate an indicator from candle columns.
 
 indicator_dict = {
-    "vwema":       (vwema, 3, ["volume", "close", "power"]),
+    "vwema":       (vwema, 2, ["volume", "close"]),
     "correlation": (correlation, 2, ["close", "volume"]),
     "sma":         (sma, 1, ["close", "high", "low", "open", "volume"]),
     "ema":         (ema, 1, ["close", "open", "high", "low"]),
@@ -500,8 +596,8 @@ indicator_dict = {
     "atr":         (atr, 3, ["open", "high", "low"]),
     "relative":    (relative, 2, ["close", "sma"]),
     "relative_gap": (relative_gap, 2, ["close", "sma"]),
-    "return_":     (return_, 2, ["close", "close"]),
-    "log_return":  (log_return, 2, ["close", "close"]),
+    "return_":     (return_, 1, ["close", "open"]),
+    "log_return":  (log_return, 1, ["close", "open"]),
     "slope":       (slope, 1, ["close", "sma", "ema"]),
     "linear_slope": (linear_slope, 1, ["close", "sma", "ema"]),
     "close_position": (close_position, 3, ["close", "high", "low"]),
@@ -523,10 +619,6 @@ indicator_dict = {
 
 
 [
-    # ==========================
-    # PRIX
-    # ==========================
-
     "weighted_close",
 
     # ==========================
