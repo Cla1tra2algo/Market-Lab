@@ -35,9 +35,10 @@ base_indicator_dict = mf.indicator_dict
 custom_indicator_dict = {}
 indicator_dict = dict(base_indicator_dict)
 
+
 base_event_dict = {
     "cross" : (ev.cross, 2, ["sma"]),
-    "highest_lowest" : (ev.highest_lowest, 2, ["close", "window"])
+    "highest_lowest" : (ev.highest_lowest, 1, ["close"])
 }
 custom_event_dict = {}
 event_dict = dict(base_event_dict)
@@ -115,9 +116,22 @@ while True :
         )
         if custom_registries is not None:
             custom_indicator_dict, custom_event_dict = custom_registries
-            indicator_dict = {**base_indicator_dict, **custom_indicator_dict}
-            event_dict = {**base_event_dict, **custom_event_dict}
-            indicator_list = list(indicator_dict.keys())
+            merged_indicators = run_safely(
+                merge_registries,
+                base_indicator_dict,
+                custom_indicator_dict,
+                "indicator_dict",
+            )
+            merged_events = run_safely(
+                merge_registries,
+                base_event_dict,
+                custom_event_dict,
+                "event_dict",
+            )
+            if merged_indicators is not None and merged_events is not None:
+                indicator_dict = merged_indicators
+                event_dict = merged_events
+                indicator_list = list(indicator_dict.keys())
         turn_page(logo, symbol, interval, logo_color, active_color=active_file)
 
     if command == "📈 Calculate Indicators":
@@ -144,12 +158,13 @@ while True :
 
     if command == "🎉 Calculate Events":
 
+
         while True :
             print(""*80, end="\r")
             print("🎉 Calculate Events")
             print(" ")
 
-            run_safely(calculate_event, event_dict, pointer, cursor)
+            run_safely(calculate_event, event_dict, pointer, cursor, err_color, style)
 
             res = skip(pointer, config=style)
             turn_page(logo, symbol, interval, logo_color, active_color=active_file)

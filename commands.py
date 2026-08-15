@@ -12,6 +12,7 @@ import os
 import re
 import shlex
 import subprocess
+from collections.abc import Mapping
 
 from importlib.util import module_from_spec, spec_from_file_location
 from inspect import signature
@@ -42,6 +43,13 @@ logo = """
     ║║║╠═╣╠╦╝╠╩╗║╣  ║   ╦  ╔═╗╔╗         
     ╩ ╩╩ ╩╩╚═╩ ╩╚═╝ ╩   ║  ╠═╣╠╩╗   
   ╚═════════════════════╩═╝╩ ╩╚═╝    """
+
+
+
+
+def column_exists(cursor, table, column):
+    cursor.execute(f"PRAGMA table_info({table})")
+    return column in {row[1] for row in cursor.fetchall()}
 
 
 
@@ -99,7 +107,6 @@ def _open_in_editor(path, err_color):
         questionary.print(f"❌ Unable to open the editor: {error}", style=err_color)
         questionary.print(f"Open this file manually: {path}", style="fg:blue")
 
-
 def create_custom_indicators_file(err_color):
 
     if CUSTOM_FILE.exists():
@@ -113,7 +120,6 @@ def create_custom_indicators_file(err_color):
                       style="fg:green")
     _open_in_editor(CUSTOM_FILE, err_color)
     return True
-
 
 def _validate_custom_registry(registry, registry_name, expected_function_parameters):
     if not isinstance(registry, dict):
@@ -138,6 +144,12 @@ def _validate_custom_registry(registry, registry_name, expected_function_paramet
                 f"{name!r} must accept {expected_function_parameters} argument(s)."
             ) from error
 
+def merge_registries(base_registry, custom_registry, registry_name):
+    """Merge built-in and custom registries after validating their structure."""
+    if not isinstance(base_registry, Mapping) or not isinstance(custom_registry, Mapping):
+        raise ValueError(f"{registry_name} must be a dictionary.")
+    return {**base_registry, **custom_registry}
+
 def load_custom_indicators_and_events(err_color):
     if not CUSTOM_FILE.exists():
         questionary.print("No custom_indicators.py file found.",
@@ -161,8 +173,6 @@ def load_custom_indicators_and_events(err_color):
 
         return None
 
-
-
 def checking_file(chemin, err_color):
 
     path = Path(chemin).expanduser()
@@ -170,19 +180,16 @@ def checking_file(chemin, err_color):
     if not path.exists():
         print(""*80, end="\r")
         print(""*80, end="\r")
-        questionary.print("❌ This file does not exist.", style=err_color)
         return False
 
     if not path.is_file():
         print(""*80, end="\r")
         print(""*80, end="\r")
-        questionary.print("❌ This path does not lead to a file.", style=err_color)
         return False
 
     if path.suffix.lower() != ".db":
         print(""*80, end="\r")
         print(""*80, end="\r")
-        questionary.print("❌ The file must have a .db extension.", style=err_color)
         return False
 
     return True
@@ -379,7 +386,7 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
 
     while True :
         while True:
-            window = input("Window size: ")
+            window = questionary.text("Window size:").ask()
 
             try:
                 window = int(window)
@@ -449,7 +456,6 @@ def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dic
     return None
 
     
-
 def calculate_stats(cursor, pointer):
 
     print(""*80, end="\r")
@@ -491,43 +497,120 @@ def calculate_stats(cursor, pointer):
             return
         sm.stat_twovar(cursor, status, parameter, second_parameter, int(x_axis))
         
-def calculate_event(event_dict, pointer, cursor):
+def calculate_event(event_dict, pointer, cursor, err_color, config):
 
     print(""*80, end="\r")
     print("🎉 Calculate Events")
     print("")
 
+
+# EVENT SELECTION
+
     event_list = list(event_dict.keys())
     choice = questionary.select("Select an event:", choices=event_list, pointer=pointer).ask()
+
+
+
+# WINDOW SELECTION
+
+    while True :
+        while True:
+            window = questionary.text("Window size:").ask()
+
+            if window.upper() == "ALL":
+                window = cursor.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+                break
+
+            else:
+                try:
+                    window = int(window)
+                    break
+
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+        if window <= 0:
+            print(""*80, end="\r")
+            print("")
+            questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+        else:
+            break
 
     event = event_dict[choice]
     event_function = event[0]
 
-    nb_para = event[1]
+    parameters = []
 
     cursor.execute("""PRAGMA table_info(candles)""")
     existing_parameters = [row[1] for row in cursor.fetchall()]
-    data = []
 
-    questionary.print(f"Recommended Parameters : {event[-1]}", style="fg:lightblue")
 
-    for i in range(nb_para):
-        if choice == "highest_lowest" and i == 1:
-            try:
-                value = int(input("Window size: "))
-                if value < 1:
-                    raise ValueError
-            except ValueError:
-                questionary.print("❌ Enter a positive integer.", style="fg:red")
-                return
+# PARAMETERS SELECTION
+
+
+    if type(event[-1]) is list:
+        print("")
+        questionary.print(f"Recommended parameters: {event[-1]}", style="fg:blue")
+
+    for i in range(event[1]):
+
+        while True:
+            parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
+            if parameter not in existing_parameters:
+                questionary.print("❌ Select a parameter from the list.", style=err_color)
+            else:
+                break
+        parameters.append(parameter)
+
+# NAME
+    while True:
+        while True :
+            name = input("Event name: ").strip()
+            if not _identifier_is_valid(name):
+                print(""*80, end="\r")
+                print("")
+                questionary.print("❌ Use a name starting with a letter or underscore; use only letters, numbers, and underscores.", style=err_color)
+
+            else: 
+                break
+
+    # AFTER NAME 
+        res = questionary.select("Append selected parameters to the indicator name?", ["No", "Yes"], pointer=pointer, style=config).ask()
+
+        after_name = None
+
+        if res == "Yes":
+            for i in range(len(parameters)):
+                after_name += f"_{parameters}"
+
+        nb_open_times = cursor.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+
+        if after_name != None:
+            name += after_name
+
+        if window == "ALL":
+            window = nb_open_times
+
+
         else:
-            value = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters).ask()
-            if value not in existing_parameters:
-                questionary.print("❌ Select a parameter from the list.", style="fg:red")
-                return
-        data.append(value)
+            window = int(window)
+            name += str(window)
 
-    event_function(cursor, data)
+        if column_exists(cursor, "status", name) is True:
+            questionary.print("This event already exists.")
+            res = questionary.select("Do you wanna choose another name for this event ? ", choices=["Yes", "No"]).ask()
+
+            if res == "No":
+                break 
+
+        else: 
+            break
+
+
+    app.ganeral_event_application(cursor, name, event_function, window, parameters)
     questionary.print("Event calculated.")
 
 def plot_indic(cursor, err_color, pointer):

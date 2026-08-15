@@ -164,4 +164,71 @@ def general_application(cursor, name, after_name, function, window, parameters):
     """, results)
 
 
+def ganeral_event_application(cursor, name,function, window, data):
+
+    nb_open_times = cursor.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+    
+    if window < 1 or len(rows := cursor.execute(f"""
+                SELECT {data[0]}, open_time
+                FROM candles
+                ORDER BY open_time
+                """).fetchall()) < window:
+        raise ValueError("The window size must not exceed the number of candles.")
+
+    rows = []
+
+    for i in range(len(data)):
+
+        data_list = cursor.execute(f"""
+                SELECT {data[i]}
+                FROM candles
+                ORDER BY open_time
+        """).fetchall()
+
+        rows.append([r[0] for r in data_list])
+
+    nb_category_of_values = len(rows)
+
+    open_times = cursor.execute("SELECT open_time FROM candles ORDER BY open_time").fetchall()
+
+    open_times = [r[0] for r in open_times]
+
+    windows_list = []
+
+    for i in range(len(rows)):
+        windows_list.append(np.array(sliding_window_view(rows[i], window)))
+
+    window_opentimes = np.array(sliding_window_view(open_times, window))
+
+    status = [0] * nb_open_times
+
+    for i in range(len(windows_list[0])):
+        values_list = []
+        for n in range(nb_category_of_values):
+            
+
+            windows_list[n][i] = [r for r in windows_list[n][i] if r is not None]
+                
+            values_list.append(windows_list[n][i])
+
+        rep = function(list(values_list), list(window_opentimes[i]), open_times)
+
+    
+        for n in range(len(rep)):
+            status[rep[n][0]] = rep[n][1]
+
+    cursor.execute(f"""ALTER TABLE status 
+                   ADD COLUMN {name}""")
+    cursor.connection.commit()
+
+    results = list(zip(status, open_times))
+
+    cursor.executemany(f"UPDATE status SET {name} = ? WHERE open_time = ?", results)
+    cursor.connection.commit()
+
+
+    
+
+
+        
 

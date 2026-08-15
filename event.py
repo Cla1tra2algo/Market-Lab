@@ -145,57 +145,20 @@ def over_under(cursor, data):
 
     cursor.connection.commit()
 
-def highest_lowest(cursor, data):
+def highest_lowest(data, window_opentimes, open_times):
 
-    window = int(data[1])
+    values_window = list(data[0])
 
-    if window < 1 or len(rows := cursor.execute(f"""
-                SELECT {data[0]}, open_time
-                FROM candles
-                ORDER BY open_time
-                """).fetchall()) < window:
-        raise ValueError("The window size must not exceed the number of candles.")
-
-    values_list = [r[0] for r in rows]
-    open_times = [r[1] for r in rows]
-
-    nb = len(open_times)
-
-    windows_list = np.array(sliding_window_view(values_list, window))
+    id = list(values_window).index(max(values_window))
+     # récupération de l'index de la plus grande valeur
+    corresponding_opentime = window_opentimes[id]      # récupération de l'open_time qui correspond a la valeur max
     
-    window_opentimes = np.array(sliding_window_view(open_times, window))
+    corresponding_index_highest = list(open_times).index(corresponding_opentime) # récupération de l'index de l'open_time dans la liste des open times
+    
 
-    status = [0] * nb
-
-    for i in range(len(windows_list)):
+    id = list(values_window).index(min(values_window)) # récupération de l'index de la plus grande valeur
+    corresponding_opentime = window_opentimes[id]      # récupération de l'open_time qui correspond a la valeur max
         
-       
-        id = list(windows_list[i]).index(max(windows_list[i]))
-        corresponding_opentime = window_opentimes[i][id]
-        
-        corresponding_index = list(open_times).index(corresponding_opentime)
+    corresponding_index_lowest = list(open_times).index(corresponding_opentime) # récupération de l'index de l'open_time dans la liste des open times
 
-        status[int(corresponding_index)] = 1
-
-
-        id = list(windows_list[i]).index(min(windows_list[i]))
-
-        corresponding_opentime = window_opentimes[i][id]
-        
-        corresponding_index = list(open_times).index(corresponding_opentime)
-
-
-        status[int(corresponding_index)] = -1
-        
-    results = list(zip(status, open_times))
-
-    if mf.column_exists(cursor, "status", "highest_lowest") is False:
-        cursor.execute("""
-            ALTER TABLE status
-            ADD COLUMN highest_lowest""")
-
-        cursor.connection.commit()
-
-    cursor.executemany("UPDATE status SET highest_lowest = ? WHERE open_time = ?", results)
-    cursor.connection.commit()
-
+    return (corresponding_index_highest, 1), (corresponding_index_lowest, -1)
