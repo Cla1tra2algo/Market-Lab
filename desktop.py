@@ -36,16 +36,13 @@ custom_indicator_dict = {}
 indicator_dict = dict(base_indicator_dict)
 
 
-base_event_dict = {
-    "cross" : (ev.cross, 2, ["sma"]),
-    "highest_lowest" : (ev.highest_lowest, 1, ["close"])
-}
+
+base_event_dict = ev.base_event_dict
 custom_event_dict = {}
 event_dict = dict(base_event_dict)
 
 
-
-indicator_list = list(indicator_dict.keys())
+INDICATOR_LIST = list(indicator_dict.keys())
 
 values_list = []
 questionary.print(logo, style=logo_color)
@@ -131,13 +128,13 @@ while True :
             if merged_indicators is not None and merged_events is not None:
                 indicator_dict = merged_indicators
                 event_dict = merged_events
-                indicator_list = list(indicator_dict.keys())
+                INDICATOR_LIST = list(indicator_dict.keys())
         turn_page(logo, symbol, interval, logo_color, active_color=active_file)
 
     if command == "📈 Calculate Indicators":
         while True:
             run_safely(calculate_indic, indicator_dict=indicator_dict, 
-                            indicator_list=indicator_list, 
+                            indicator_list=INDICATOR_LIST, 
                             cursor=cursor, 
                             history=history, 
                             symbol=symbol, 
@@ -160,9 +157,6 @@ while True :
 
 
         while True :
-            print(""*80, end="\r")
-            print("🎉 Calculate Events")
-            print(" ")
 
             run_safely(calculate_event, event_dict, pointer, cursor, err_color, style)
 
@@ -175,9 +169,6 @@ while True :
     if command == "✏️  Plot":
 
         while True : 
-            print(""*80, end="\r")
-            print("✏️  Plot")
-            print(" ")
 
             run_safely(plot_indic, cursor, err_color=err_color, pointer=pointer)
             res = skip(pointer, config=style)

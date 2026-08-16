@@ -1,6 +1,15 @@
 from math import *
 import numpy as np
 from scipy.signal import find_peaks
+from scipy.signal import savgol_filter
+
+def _isint(value):
+    try:
+        int(value)
+        return True
+    except ValueError:
+        return False
+
 
 def vwema(data):
     sum  = 0.
@@ -579,6 +588,64 @@ def william(data):
     
     return wil
 
+def filter_savgol(cursor, parameters, name):
+
+    if column_exists(cursor, "candles", name) is False:
+        cursor.execute(f"ALTER TABLE candles ADD COLUMN {name}")
+
+    else:
+        cursor.execute(f"ALTER TABLE candles DROP COLUMN {name}")
+        cursor.execute(f"ALTER TABLE candles ADD COLUMN {name}")    
+
+    #print("\r" + " " * 80, end="\r")
+
+    print("Filter Application")
+
+    data = parameters[0]
+
+    window_length = int(parameters[1])
+    polyorder = int(parameters[2])
+
+    cursor.execute(f"""
+        SELECT open_time, {data}
+        FROM candles
+        WHERE {data} IS NOT NULL
+        ORDER BY open_time
+    """)
+
+    rows = cursor.fetchall()
+
+    open_times = [row[0] for row in rows]
+    vwema_values = np.array(
+        [row[1] for row in rows],
+        dtype=float
+    )
+
+
+    if len(vwema_values) < window_length:
+        raise ValueError(
+            f"This serie is to short to be filtered : "
+            f"{len(vwema_values)} < {window_length}"
+        )
+
+    filtered = savgol_filter(
+        vwema_values,
+        window_length=window_length,
+        polyorder=polyorder
+    )
+
+    cursor.executemany(f"""
+        UPDATE candles
+        SET {name} = ?
+        WHERE open_time = ?
+    """,
+    list(zip(filtered.tolist(), open_times)))
+
+    cursor.connection.commit()
+
+    print("\r" + " " * 80, end="\r")
+    print("Filter Applied", end="\r")
+
 
 # Functions exposed by the terminal indicator interface.
 # Each value is: (calculation function, number of data series, recommended columns).
@@ -586,36 +653,39 @@ def william(data):
 # excluded: they do not calculate an indicator from candle columns.
 
 indicator_dict = {
-    "vwema":       (vwema, 2, ["volume", "close"]),
-    "correlation": (correlation, 2, ["close", "volume"]),
-    "sma":         (sma, 1, ["close", "high", "low", "open", "volume"]),
-    "ema":         (ema, 1, ["close", "open", "high", "low"]),
-    "wma":         (wma, 1, ["close", "open", "high", "low"]),
-    "vwma":        (vwma, 2, ["close", "volume"]),
-    "amplitude":   (amplitude, 2, ["high", "low"]),
-    "atr":         (atr, 3, ["open", "high", "low"]),
-    "relative":    (relative, 2, ["close", "sma"]),
-    "relative_gap": (relative_gap, 2, ["close", "sma"]),
-    "return_":     (return_, 1, ["close", "open"]),
-    "log_return":  (log_return, 1, ["close", "open"]),
-    "slope":       (slope, 1, ["close", "sma", "ema"]),
-    "linear_slope": (linear_slope, 1, ["close", "sma", "ema"]),
-    "close_position": (close_position, 3, ["close", "high", "low"]),
-    "std_dev":     (std_dev, 1, ["close", "volume"]),
-    "zscore":      (zscore, 3, ["close", "sma", "std_dev"]),
-    "log_":        (log_, 1, ["close", "volume"]),
-    "bol_band_up": (bol_band_up, 2, ["sma", "std_dev"]),
-    "bol_band_down": (bol_band_down, 2, ["sma", "std_dev"]),
-    "avg_gain":    (avg_gain, 1, ["close"]),
-    "avg_loss":    (avg_loss, 1, ["close"]),
-    "rsi":         (rsi, 2, ["avg_gain", "avg_loss"]),
-    "stochastic":  (stochastic, 3, ["close", "high", "low"]),
-    "tp":          (tp, 3, ["close", "high", "low"]),
-    "cci":         (cci, 1, ["tp"]),
-    "roc":         (roc, 1, ["close"]),
-    "william":     (william, 3, ["close", "high", "low"]),
+    "vwema":       (vwema, 2, ["volume", "close"], "general_app"),
+    "correlation": (correlation, 2, ["close", "volume"], "general_app"),
+    "sma":         (sma, 1, ["close", "high", "low", "open", "volume"], "general_app"),
+    "ema":         (ema, 1, ["close", "open", "high", "low"], "general_app"),
+    "wma":         (wma, 1, ["close", "open", "high", "low"], "general_app"),
+    "vwma":        (vwma, 2, ["close", "volume"], "general_app"),
+    "amplitude":   (amplitude, 2, ["high", "low"], "general_app"),
+    "atr":         (atr, 3, ["open", "high", "low"], "general_app"),
+    "relative":    (relative, 2, ["close", "sma"], "general_app"),
+    "relative_gap": (relative_gap, 2, ["close", "sma"], "general_app"),
+    "return_":     (return_, 1, ["close", "open"], "general_app"),
+    "log_return":  (log_return, 1, ["close", "open"], "general_app"),
+    "slope":       (slope, 1, ["close", "sma", "ema"], "general_app"),
+    "linear_slope": (linear_slope, 1, ["close", "sma", "ema"], "general_app"),
+    "close_position": (close_position, 3, ["close", "high", "low"], "general_app"),
+    "std_dev":     (std_dev, 1, ["close", "volume"], "general_app"),
+    "zscore":      (zscore, 3, ["close", "sma", "std_dev"], "general_app"),
+    "log_":        (log_, 1, ["close", "volume"], "general_app"),
+    "bol_band_up": (bol_band_up, 2, ["sma", "std_dev"], "general_app"),
+    "bol_band_down": (bol_band_down, 2, ["sma", "std_dev"], "general_app"),
+    "avg_gain":    (avg_gain, 1, ["close"], "general_app"),
+    "avg_loss":    (avg_loss, 1, ["close"], "general_app"),
+    "rsi":         (rsi, 2, ["avg_gain", "avg_loss"], "general_app"),
+    "stochastic":  (stochastic, 3, ["close", "high", "low"], "general_app"),
+    "tp":          (tp, 3, ["close", "high", "low"], "general_app"),
+    "cci":         (cci, 1, ["tp"], "general_app"),
+    "roc":         (roc, 1, ["close"], "general_app"),
+    "william":     (william, 3, ["close", "high", "low"], "general_app"),
+    "filter_savgol": (filter_savgol, 3, [("Select column to filter: ", lambda x, parameter_list: True if x in parameter_list else print(f"❌ The parameter must be one of the following: {parameter_list}")), 
+                                         ("Window length: ", lambda x, parameter_list: True if int(x) % 2 == 1 and _isint(x) is True else print("❌ Window length must be an odd integer.")), 
+                                         ("Polynomial order: ", lambda x, parameter_list: True if _isint(x) is True else print("❌ Polynomial order must be an integer."))], 
+                                         "custom")
 }
-
 
 
 [

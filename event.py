@@ -3,155 +3,134 @@ from scipy.signal import *
 import math_formula as mf
 from math_formula import *
 from numpy.lib.stride_tricks import sliding_window_view
+from questionary import *
+
+def column_exists(cursor, table, column):
+    cursor.execute(f"PRAGMA table_info({table})")
+    return column in {row[1] for row in cursor.fetchall()}
+
+def _isfloat(value):
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
 
 
-def peaks_detection(cursor, prominence_para):
+def peaks_detection(cursor, parameters, name):
 
-    rows = cursor.execute("""
-        SELECT open_time, vwema_savgol
+    if column_exists(cursor, "status", name) is False:
+        cursor.execute(f"ALTER TABLE status ADD COLUMN {name}")
+    else:
+        cursor.execute(f"ALTER TABLE status DROP COLUMN {name}")
+        cursor.execute(f"ALTER TABLE status ADD COLUMN {name}")
+
+    prominence_para = float(parameters[0])
+
+    data = parameters[1]
+
+    rows = cursor.execute(f"""
+        SELECT open_time, {data}
         FROM candles 
-        WHERE vwema_savgol IS NOT NULL
+        WHERE {data} IS NOT NULL
         ORDER BY open_time"""
     ).fetchall()
 
     open_times = [row[0] for row in rows]
     values = np.array([row[1] for row in rows], dtype=float)
 
-    peaks_table = find_peaks(values, prominence=prominence_para)[0]
+    print(f"Values: {list(values)}")
 
-    lows_table = find_peaks( -values, prominence=prominence_para)[0]
+    peaks_table = find_peaks(values, prominence=prominence_para)[0]
+    lows_table = find_peaks(-values, prominence=prominence_para)[0]
+
+    print(f"Peaks detected at indices: {peaks_table}")
+    print(f"Lows detected at indices: {lows_table}")
 
     # Création de la liste des statuts
-    statut = [0] * len(open_times)
-
+    status = [0] * len(open_times)
 
     # Marquage des maxima
 
     for  index in range(len(peaks_table)):
-        statut[peaks_table[index]] = 100
-
+        status[peaks_table[index]] = 1
 
     # Marquage des minima
 
     for index in range(len(lows_table)):
 
-        statut[lows_table[index]] = -100
+        status[lows_table[index]] = -1
 
     # Vérification de cohérence
-    assert len(statut) == len(open_times), \
+    assert len(status) == len(open_times), \
         "Le nombre de statuts ne correspond pas au nombre de bougies."
     
     # Préparation des données
 
-    data = list(zip(statut,open_times))
+    data = list(zip(status,open_times))
 
-    cursor.executemany("""
-    UPDATE candles
-    SET statut = ?
+    print(f"Applying peaks detection with prominence: {prominence_para} on {data}... : {status}")
+
+
+    cursor.executemany(f"""
+    UPDATE status
+    SET {name} = ?
     WHERE open_time = ?
     """, data)
     cursor.connection.commit()
 
-def cross(cursor, data):
-    cursor.execute(f"SELECT \"{data[0]}\", \"{data[1]}\", open_time FROM candles ORDER BY open_time")
+def cross(data, window_opentimes, open_times):
 
-    rows = cursor.fetchall()
+    values1_window = list(data[0])
+    values2_window = list(data[1])
 
-    data_1 = [d[0] for d in rows]
-    data_2 = [d[1] for d in rows]
-    open_times = [d[2] for d in rows]    
+    corresponding_index_over = [] # récupération de l'index de l'open_time dans la liste des open times
+    corresponding_index_under = [] # récupération de l'index de l'open_time dans la liste des open times
 
-    status = [0] * len(open_times)
-
-    for i in range(len(data_1)):
+    for i in range(len(open_times)):
 
         if i == 0:
             continue
 
-        if data_1[i] is not None and data_1[i-1] is not None and data_2[i] is not None and data_2[i-1] is not None:
-            prev_diff = data_1[i-1]-data_2[i-1]
-            diff = data_1[i]-data_2[i]
+        if values1_window[i-1] is not None and values2_window[i-1] is not None and values1_window[i] is not None and values2_window[i] is not None and values1_window[i-1] < values2_window[i-1] and values2_window[i] < values1_window[i]:
+            corresponding_opentime = window_opentimes[i] # récupération de l'open_time qui correspond a la valeur max
+            corresponding_index_over.append(list(open_times).index(corresponding_opentime)) # récupération de l'index de l'open_time dans la liste des open times
 
-            if prev_diff < 0 < diff:
-                status[i] = 1
-
-            elif prev_diff > 0 > diff :
-                status[i] = -1
-
-        else :
-            status[i] = 0
+        elif values1_window[i-1] is not None and values2_window[i-1] is not None and values1_window[i] is not None and values2_window[i] is not None and values1_window[i-1] > values2_window[i-1] and values2_window[i] > values1_window[i]:
+            corresponding_opentime = window_opentimes[i] # récupération de l'open_time qui correspond a la valeur min
+            corresponding_index_under.append(list(open_times).index(corresponding_opentime)) # récupération de l'index de l'open_time dans la liste des open times
 
 
-    results = list(zip(status, open_times))
+    return (corresponding_index_over, 1), (corresponding_index_under, -1)
 
-    name = f"cross_{data[0]}_{data[1]}"
+def over_under(data, window_opentimes, open_times):
 
-    if not mf.column_exists(cursor, "status", name):
-        cursor.execute(f"""
-            ALTER TABLE status
-            ADD COLUMN \"{name}\"
-    """)
+    values1_window = list(data[0])
+    values2_window = list(data[1])
 
-    cursor.connection.commit()
+    corresponding_index_over = [] # récupération de l'index de l'open_time dans la liste des open times
+    corresponding_index_under = [] # récupération de l'index de l'open_time dans la liste des open times
 
-    cursor.executemany(f"""
-        UPDATE status
-        SET \"{name}\" = ?
-        WHERE open_time = ?
-    """, results)
+    for i in range(len(open_times)):
 
-    cursor.connection.commit()
+        if values1_window[i] is not None and values2_window[i] is not None and values1_window[i] > values2_window[i]:
+            corresponding_opentime = window_opentimes[i]                             # récupération de l'open_time qui correspond a la valeur max
+            corresponding_index_over.append(list(open_times).index(corresponding_opentime)) # récupération de l'index de l'open_time dans la liste des open times
 
-def over_under(cursor, data):
+        elif values1_window[i] is not None and values2_window[i] is not None and values1_window[i] < values2_window[i]:
+            corresponding_opentime = window_opentimes[i]                             # récupération de l'open_time qui correspond a la valeur min
+            corresponding_index_under.append(list(open_times).index(corresponding_opentime)) # récupération de l'index de l'open_time dans la liste des open times
 
-    cursor.execute(f"""
-    SELECT {data[0]}, {data[1]}, open_time
-    FROM candles
-    ORDER BY open_time
-""")
 
-    rows = cursor.fetchall()
-
-    data_1 = [r[0] for r in rows]
-    data_2 = [r[1] for r in rows]
-    open_times = [r[2] for r in rows]
-
-    nb = len(open_times)
-
-    status = [0] * nb
-
-    for i in range(nb):
-        if data_1[i] is None or data_2[i] is None:
-            continue
-        if data_1[i]-data_2[i] > 0:
-            status[i] = 1
-
-        elif data_1[i]-data_2[i] < 0:
-            status[i] = -1
-
-    results = list(zip(status, open_times))
-
-    if mf.column_exists(cursor,"status", "status_under_over") is False:
-        cursor.execute("""
-            ALTER TABLE status
-            ADD COLUMN status_under_over
-        """)
-
-    cursor.executemany("""
-        UPDATE status
-        SET status_under_over = ?
-        WHERE open_time = ?
-    """, results)
-
-    cursor.connection.commit()
+    return (corresponding_index_over, 1), (corresponding_index_under, -1)
 
 def highest_lowest(data, window_opentimes, open_times):
 
     values_window = list(data[0])
 
-    id = list(values_window).index(max(values_window))
-     # récupération de l'index de la plus grande valeur
-    corresponding_opentime = window_opentimes[id]      # récupération de l'open_time qui correspond a la valeur max
+    id = list(values_window).index(max(values_window))                           # récupération de l'index de la plus grande valeur
+
+    corresponding_opentime = window_opentimes[id]                                # récupération de l'open_time qui correspond a la valeur max
     
     corresponding_index_highest = list(open_times).index(corresponding_opentime) # récupération de l'index de l'open_time dans la liste des open times
     
@@ -161,4 +140,19 @@ def highest_lowest(data, window_opentimes, open_times):
         
     corresponding_index_lowest = list(open_times).index(corresponding_opentime) # récupération de l'index de l'open_time dans la liste des open times
 
-    return (corresponding_index_highest, 1), (corresponding_index_lowest, -1)
+    return ([corresponding_index_highest], 1), ([corresponding_index_lowest], -1)
+
+
+base_event_dict = {
+    "cross" : (cross, 2, ["sma"], "general_app"),
+    "highest_lowest" : (highest_lowest, 1, ["close"], "general_app"),
+    "over_under" : (over_under, 2, ["close", "sma"], "general_app"),
+    "peaks_detection" : (peaks_detection, 
+                         2, 
+                         [("Select a prominence: ", lambda value, parameter_list: True if _isfloat(value) else print("❌ The prominence must be a float.")),
+                          ("Select a parameter: " , lambda value, parameter_list: True if value in parameter_list else print(f"❌ The parameter must be one of the following: {parameter_list}"))],
+                         "custom")
+}
+
+
+

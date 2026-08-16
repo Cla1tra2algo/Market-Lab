@@ -7,74 +7,12 @@ from numpy.lib.stride_tricks import sliding_window_view
 from scipy.signal import savgol_filter
 
 
-def filter_application(cursor, data):
-
-    print("\r" + " " * 80, end="\r")
-
-    print("Filter Application")
-
-    cursor.execute(f"""
-        SELECT open_time, {data}
-        FROM candles
-        WHERE {data} IS NOT NULL
-        ORDER BY open_time
-    """)
-
-    rows = cursor.fetchall()
-
-    if not rows:
-        raise ValueError("Aucune donnée VWEMA disponible.")
-
-    open_times = [row[0] for row in rows]
-    vwema_values = np.array(
-        [row[1] for row in rows],
-        dtype=float
-    )
-
-    window_length = 51
-    polyorder = 3
-
-    if len(vwema_values) < window_length:
-        raise ValueError(
-            f"Série trop courte pour savgol_filter : "
-            f"{len(vwema_values)} < {window_length}"
-        )
-
-    filtered = savgol_filter(
-        vwema_values,
-        window_length=window_length,
-        polyorder=polyorder
-    )
-
-    cursor.executemany("""
-        UPDATE candles
-        SET vwema_savgol = ?
-        WHERE open_time = ?
-    """,
-    list(zip(filtered.tolist(), open_times)))
-
-    cursor.connection.commit()
-
-    print("\r" + " " * 80, end="\r")
-    print("Filter Applied", end="\r")
 
 
-def general_application(cursor, name, after_name, function, window, parameters):
+def general_application(cursor, name, function, window, parameters):
 
     window = int(window)
     cursor.execute("PRAGMA table_info(candles)")
-
-    columns = [c[1] for c in cursor.fetchall()]
-
-
-    if after_name == "Yes":
-        for i in range(len(parameters)):
-            name += f"_{parameters[i]}"
-
-
-    if window > 1:
-        name = name + "_" + str(window)
-
 
     if not mf.column_exists(cursor, "candles", name):
 
@@ -82,6 +20,11 @@ def general_application(cursor, name, after_name, function, window, parameters):
             ALTER TABLE candles 
             ADD COLUMN {name} REAL
     """)
+
+    else:
+        cursor.execute(f"""
+            ALTER TABLE candles
+            DROP COLUMN {name}""")
 
     rows = np.array([])
     mat = []
@@ -167,6 +110,20 @@ def general_application(cursor, name, after_name, function, window, parameters):
 def ganeral_event_application(cursor, name,function, window, data):
 
     nb_open_times = cursor.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+
+
+    if not mf.column_exists(cursor, "candles", name):
+
+        cursor.execute(f"""
+            ALTER TABLE candles 
+            ADD COLUMN {name} REAL
+    """)
+
+    else:
+        cursor.execute(f"""
+            ALTER TABLE status
+            DROP COLUMN {name}""")
+
     
     if window < 1 or len(rows := cursor.execute(f"""
                 SELECT {data[0]}, open_time
@@ -206,16 +163,13 @@ def ganeral_event_application(cursor, name,function, window, data):
         values_list = []
         for n in range(nb_category_of_values):
             
-
-            windows_list[n][i] = [r for r in windows_list[n][i] if r is not None]
-                
             values_list.append(windows_list[n][i])
 
         rep = function(list(values_list), list(window_opentimes[i]), open_times)
-
-    
+ 
         for n in range(len(rep)):
-            status[rep[n][0]] = rep[n][1]
+            for j in range(len(rep[n][0])):
+                status[rep[n][0][j]] = rep[n][1]
 
     cursor.execute(f"""ALTER TABLE status 
                    ADD COLUMN {name}""")

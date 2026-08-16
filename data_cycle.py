@@ -46,9 +46,6 @@ CREATE TABLE IF NOT EXISTS candles(
     volume REAL NOT NULL, 
 
     close_time REAL NOT NULL,
-    
-    vwema,
-    vwema_savgol,
 
     quote_asset_vol REAL NOT NULL, 
 

@@ -52,7 +52,6 @@ def column_exists(cursor, table, column):
     return column in {row[1] for row in cursor.fetchall()}
 
 
-
 CUSTOM_FILE = Path(__file__).resolve().parent / "custom_indicators.py"
 
 CUSTOM_TEMPLATE = '''"""Personal Market Lab indicators and events.
@@ -107,7 +106,7 @@ def _open_in_editor(path, err_color):
         questionary.print(f"❌ Unable to open the editor: {error}", style=err_color)
         questionary.print(f"Open this file manually: {path}", style="fg:blue")
 
-def create_custom_indicators_file(err_color):
+def create_custom_indicators_file(err_color, pointer):
 
     if CUSTOM_FILE.exists():
         questionary.print(f"Custom indicator file already exists: {CUSTOM_FILE}", style="fg:yellow")
@@ -119,6 +118,9 @@ def create_custom_indicators_file(err_color):
     questionary.print(f"Custom indicator file created: {CUSTOM_FILE}",
                       style="fg:green")
     _open_in_editor(CUSTOM_FILE, err_color)
+
+    questionary.select("Press Enter to continue", choices=["Ok"], pointer=pointer).ask()
+
     return True
 
 def _validate_custom_registry(registry, registry_name, expected_function_parameters):
@@ -165,6 +167,9 @@ def load_custom_indicators_and_events(err_color):
         custom_event_dict = getattr(module, "event_dict", {})
         _validate_custom_registry(custom_indicator_dict, "indicator_dict", 1)
         _validate_custom_registry(custom_event_dict, "event_dict", 2)
+
+        questionary.print(f"Loaded {custom_indicator_dict.keys()} (custom indicator(s)) and {custom_event_dict.keys()} (custom event(s)).")
+
         return custom_indicator_dict, custom_event_dict
     
 
@@ -354,79 +359,158 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
     print("📈 Calculate Indicators")
     print("")
 
-    while True :
-        name = input("Indicator name: ").strip()
-        if not _identifier_is_valid(name):
-            print(""*80, end="\r")
-            print("")
-            questionary.print("❌ Use a name starting with a letter or underscore; use only letters, numbers, and underscores.", style=err_color)
-
-        else: 
-            break
-
-    after_name = questionary.select("Append selected parameters to the indicator name?",
-                                        ["No", "Yes"], pointer=pointer, style=config).ask()
+    existing_parameters = [row[1] for row in cursor.execute("PRAGMA table_info(candles)").fetchall()]
 
     while True : 
-        indicator_ = questionary.autocomplete("Select an indicator:", choices=indicator_list, style=config).ask()
+        indicator_name = questionary.autocomplete("Select an indicator:", choices=indicator_list, style=config).ask()
 
-        if indicator_ == "":
+        if indicator_name == "":
             print(""*80, end="\r")
             print("")
             questionary.print("❌ Select a function.", style=err_color)
 
-        elif indicator_ in indicator_list:
-            indicator_ = indicator_dict[indicator_]
+        elif indicator_name in indicator_list:
+            indicator_ = indicator_dict[indicator_name]
             break
         else: 
             print(""*80, end="\r")
             print("")
             questionary.print("❌ This function does not exist.", style=err_color)
-    
 
-    while True :
+
+    indicator_function = indicator_[0]
+
+    if indicator_[3] == "custom":
+
+        parameters = []
+        for i in range(indicator_[1]):
+            while True:
+                parameter = questionary.text(f"{indicator_[2][i][0]}").ask()
+
+                if indicator_[2][i][1](parameter, parameter_list=existing_parameters) is True:
+                    parameters.append(parameter)
+                    break
+
+        questionary.print(f"Selected parameters: {parameters}", style="fg:blue")
+
+        choice = indicator_name
+
         while True:
-            window = questionary.text("Window size:").ask()
+            name = choice
+    
+            res = questionary.select("Append selected parameters to the event name ?", ["No", "Yes"], pointer=pointer, style=config).ask()
 
-            try:
-                window = int(window)
+            after_name = None
+
+            if res == "Yes":
+                after_name = ""
+                for i in range(len(parameters)):
+                    after_name += f"_{parameters[i]}"
+
+                name += after_name
+
+            questionary.print(f"Event name: {name}")
+
+            if column_exists(cursor, "status", name) is True:
+                questionary.print("This event already exists.")
+                res = questionary.select("Do you wanna choose another name for this event ? If you select 'No', the existing event will be replaced.", 
+                                        choices=["Yes", "No"], 
+                                        pointer=pointer, 
+                                        style=config).ask()
+
+                if res == "No":
+                    break 
+
+            else: 
                 break
 
-            except ValueError:
+        indicator_function(cursor, parameters, name)
+        cursor.connection.commit()
+        questionary.print("Indicator calculated.")
+
+    else:
+        while True :
+            while True:
+                window = questionary.text("Window size:").ask()
+
+                try:
+                    window = int(window)
+                    break
+
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+            if window <= 0:
                 print(""*80, end="\r")
                 print("")
                 questionary.print("❌ You must enter an integer greater than 0", style=err_color)
 
-        if window <= 0:
-            print(""*80, end="\r")
+            else:
+                break
+
+
+        parameters = []
+
+        cursor.execute("""PRAGMA table_info(candles)""")
+        existing_parameters = [row[1] for row in cursor.fetchall()]
+
+
+        if type(indicator_[-1]) is list:
             print("")
-            questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+            questionary.print(f"Recommended parameters: {indicator_[-1]}", style="fg:blue")
 
-        else:
-            break
+        for i in range(indicator_[1]):
+
+            parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
+            if parameter not in existing_parameters:
+                questionary.print("❌ Select a parameter from the list.", style=err_color)
+                return
+            parameters.append(parameter)
 
 
-    parameters = []
+        while True :
+            while True :
+                name = input("Indicator name: ").strip()
+                if not _identifier_is_valid(name):
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ Use a name starting with a letter or underscore; use only letters, numbers, and underscores.", style=err_color)
 
-    cursor.execute("""PRAGMA table_info(candles)""")
-    existing_parameters = [row[1] for row in cursor.fetchall()]
+                else: 
+                    break
+
+            after_name = questionary.select("Append selected parameters to the indicator name?",
+                                                ["No", "Yes"], pointer=pointer, style=config).ask()
+
+            if after_name == "Yes":
+                for i in range(len(parameters)):
+                    name += f"_{parameters[i]}"
 
 
-    if type(indicator_[-1]) is list:
-        print("")
-        questionary.print(f"Recommended parameters: {indicator_[-1]}", style="fg:blue")
+            if window > 1:
+                name = name + "_" + str(window)
 
-    for i in range(indicator_[1]):
 
-        parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
-        if parameter not in existing_parameters:
-            questionary.print("❌ Select a parameter from the list.", style=err_color)
-            return
-        parameters.append(parameter)
+            if column_exists(cursor, "candles", name) is True:
+                questionary.print("This indicator already exists.")
+                res = questionary.select("Do you wanna choose another name for this indicator ? If you select 'No', the existing indicator will be replaced.", 
+                                        choices=["Yes", "No"], 
+                                        pointer=pointer, 
+                                        style=config).ask()
 
-    app.general_application(cursor, name, after_name, indicator_[0], window, parameters)
-    conn.commit()
-    history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
+                if res == "No":
+                    cursor.execute(f"ALTER TABLE candles DROP COLUMN {name}")
+                    break
+
+            else:
+                break
+
+        app.general_application(cursor, name, indicator_[0], window, parameters)
+
+        conn.commit()
+        history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
 
 def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dict, custom_event_dict):
     rep = questionary.select("Actions : ", ["Create custom_indicators.py", 
@@ -435,7 +519,7 @@ def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dic
                                             "Back to main menu"], pointer=pointer).ask()
 
     if rep == "Create custom_indicators.py":
-        create_custom_indicators_file(err_color)
+        create_custom_indicators_file(err_color, pointer)
         return None
 
     if rep == "List available custom indicators and events":
@@ -451,11 +535,13 @@ def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dic
             return None
         custom_indicator_dict, custom_event_dict = registries
         questionary.print(f"{len(custom_indicator_dict)} custom indicator(s) loaded; {len(custom_event_dict)} custom event(s) loaded.", style="fg:green")
+
+        res = questionary.select("", ["Ok"], pointer=pointer).ask()
+
         return custom_indicator_dict, custom_event_dict
 
     return None
-
-    
+ 
 def calculate_stats(cursor, pointer):
 
     print(""*80, end="\r")
@@ -504,114 +590,171 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
     print("")
 
 
+    cursor.execute("""PRAGMA table_info(candles)""")
+    existing_parameters = [row[1] for row in cursor.fetchall()]
+
 # EVENT SELECTION
 
-    event_list = list(event_dict.keys())
-    choice = questionary.select("Select an event:", choices=event_list, pointer=pointer).ask()
-
-
-
-# WINDOW SELECTION
-
     while True :
-        while True:
-            window = questionary.text("Window size:").ask()
+        event_list = list(event_dict.keys())
+        choice = questionary.select("Select an event:", choices=event_list, pointer=pointer).ask()
 
-            if window.upper() == "ALL":
-                window = cursor.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
-                break
-
-            else:
-                try:
-                    window = int(window)
-                    break
-
-                except ValueError:
-                    print(""*80, end="\r")
-                    print("")
-                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
-
-        if window <= 0:
-            print(""*80, end="\r")
-            print("")
-            questionary.print("❌ You must enter an integer greater than 0", style=err_color)
-
+        if choice not in event_list:
+            questionary.print("❌ Select an event from the list.", style=err_color)
         else:
-            break
+            break  
 
     event = event_dict[choice]
     event_function = event[0]
 
-    parameters = []
+    if event[3] == "custom":
+        parameters = []
+        for i in range(event[1]):
+            while True:
+                parameter = questionary.text(f"{event[2][i][0]}").ask()
 
-    cursor.execute("""PRAGMA table_info(candles)""")
-    existing_parameters = [row[1] for row in cursor.fetchall()]
+                if event[2][i][1](parameter, parameter_list=existing_parameters) is True:
+                    parameters.append(parameter)
+                    break
 
-
-# PARAMETERS SELECTION
-
-
-    if type(event[-1]) is list:
-        print("")
-        questionary.print(f"Recommended parameters: {event[-1]}", style="fg:blue")
-
-    for i in range(event[1]):
 
         while True:
-            parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
-            if parameter not in existing_parameters:
-                questionary.print("❌ Select a parameter from the list.", style=err_color)
-            else:
-                break
-        parameters.append(parameter)
+            name = choice
+    
+            res = questionary.select("Append selected parameters to the event name ?", ["No", "Yes"], pointer=pointer, style=config).ask()
 
-# NAME
-    while True:
-        while True :
-            name = input("Event name: ").strip()
-            if not _identifier_is_valid(name):
-                print(""*80, end="\r")
-                print("")
-                questionary.print("❌ Use a name starting with a letter or underscore; use only letters, numbers, and underscores.", style=err_color)
+            after_name = None
+
+            if res == "Yes":
+                after_name = ""
+                for i in range(len(parameters)):
+                    after_name += f"_{parameters[i]}"
+
+            
+            if after_name != None:
+                name += after_name
+
+            questionary.print(f"Event name: {name}")
+
+            if column_exists(cursor, "status", name) is True:
+                questionary.print("This event already exists.")
+                res = questionary.select("Do you wanna choose another name for this event ? If you select 'No', the existing event will be replaced.", 
+                                        choices=["Yes", "No"], 
+                                        pointer=pointer, 
+                                        style=config).ask()
+
+                if res == "No":
+                    break 
 
             else: 
                 break
 
-    # AFTER NAME 
-        res = questionary.select("Append selected parameters to the indicator name?", ["No", "Yes"], pointer=pointer, style=config).ask()
+        event_function(cursor, parameters, name)
+        cursor.connection.commit()
 
-        after_name = None
+        questionary.print("Event calculated.")
+    
+    elif event[3] == "general_app":
 
-        if res == "Yes":
-            for i in range(len(parameters)):
-                after_name += f"_{parameters}"
+# WINDOW SELECTION
+        while True :
+            while True:
+                window = questionary.text("Window size (type 'ALL' for all data):").ask()
 
-        nb_open_times = cursor.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+                if str(window).upper() == "ALL":
+                    window = "ALL"
+                    break
 
-        if after_name != None:
-            name += after_name
+                else:
+                    try:
+                        window = int(window)
+                        break
 
-        if window == "ALL":
-            window = nb_open_times
+                    except ValueError:
+                        print(""*80, end="\r")
+                        print("")
+                        questionary.print("❌ You must enter an integer greater than 0", style=err_color)
 
+            if type(window) is not str and window <= 0:
+                print(""*80, end="\r")
+                print("")
+                questionary.print("❌ You must enter an integer greater than 0", style=err_color)
 
-        else:
-            window = int(window)
-            name += str(window)
-
-        if column_exists(cursor, "status", name) is True:
-            questionary.print("This event already exists.")
-            res = questionary.select("Do you wanna choose another name for this event ? ", choices=["Yes", "No"]).ask()
-
-            if res == "No":
-                break 
-
-        else: 
-            break
+            else:
+                break
 
 
-    app.ganeral_event_application(cursor, name, event_function, window, parameters)
-    questionary.print("Event calculated.")
+
+        parameters = []
+
+        cursor.execute("""PRAGMA table_info(candles)""")
+        existing_parameters = [row[1] for row in cursor.fetchall()]
+
+
+    # PARAMETERS SELECTION
+
+
+        if type(event[-1]) is list:
+            print("")
+            questionary.print(f"Recommended parameters: {event[-1]}", style="fg:blue")
+
+        for i in range(event[1]):
+
+            while True:
+                parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
+                if parameter not in existing_parameters:
+                    questionary.print("❌ Select a parameter from the list.", style=err_color)
+                else:
+                    break
+            parameters.append(parameter)
+
+        questionary.print(f"Selected parameters: {parameters}", style="fg:lightblue")
+        
+    # NAME
+        while True:
+            name = choice
+    
+            res = questionary.select("Append selected parameters to the event name ?", ["No", "Yes"], pointer=pointer, style=config).ask()
+
+            after_name = None
+
+            if res == "Yes":
+                after_name = ""
+                for i in range(len(parameters)):
+                    after_name += f"_{parameters[i]}"
+
+            
+            if after_name != None:
+                name += after_name
+
+
+            if window == "ALL":
+                nb_open_times = cursor.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+                window = nb_open_times
+
+            else:
+                name += f"_{window}"
+
+
+
+            questionary.print(f"Event name: {name}")
+
+            if column_exists(cursor, "status", name) is True:
+                questionary.print("This event already exists.")
+                res = questionary.select("Do you wanna choose another name for this event ? If you select 'No', the existing event will be replaced.", 
+                                        choices=["Yes", "No"], 
+                                        pointer=pointer, 
+                                        style=config).ask()
+
+                if res == "No":
+                    break 
+
+            else: 
+                break
+
+
+        app.ganeral_event_application(cursor, name, event_function, window, parameters)
+        questionary.print("Event calculated.")
 
 def plot_indic(cursor, err_color, pointer):
 
