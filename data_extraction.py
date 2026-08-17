@@ -2,27 +2,26 @@ import time
 
 import requests
 
-def extraction_binance(cursor, symbol, interval, timestamp):
+def extraction_binance(cursor, symbol, interval, start_timestamp, end_timestamp):
 
     url = "https://api.binance.com/api/v3/klines"
 
-    last_row = cursor.execute("SELECT MAX(open_time) FROM candles").fetchone()
-    if last_row and last_row[0] is not None:
-        timestamp = last_row[0] + 1
-
     count = 0
     while True :
-        count += 1
+
         params = {
             "symbol": symbol,
             "interval": interval,
             "limit": 1000,
-            "startTime": timestamp
+            "startTime": start_timestamp,
+            "endTime": end_timestamp
         }
         try:
             response = requests.get(url, params=params, timeout=20)
             response.raise_for_status()
             data = response.json()
+            count += len(data)
+
         except (requests.RequestException, ValueError) as error:
             raise RuntimeError(f"Unable to download Binance data: {error}") from error
 
@@ -69,7 +68,7 @@ def extraction_binance(cursor, symbol, interval, timestamp):
             cursor.execute(
                 "INSERT OR IGNORE INTO status (open_time) VALUES (?)", (open_time,))
 
-        print(f"Candles collected : {count*1000}", end="\r")
+        print(f"Candles collected : {count}", end="\r")
         
         last = data[-1]
 

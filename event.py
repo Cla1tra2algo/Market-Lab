@@ -39,7 +39,6 @@ def peaks_detection(cursor, parameters, name):
     open_times = [row[0] for row in rows]
     values = np.array([row[1] for row in rows], dtype=float)
 
-    print(f"Values: {list(values)}")
 
     peaks_table = find_peaks(values, prominence=prominence_para)[0]
     lows_table = find_peaks(-values, prominence=prominence_para)[0]

@@ -9,7 +9,7 @@ from scipy.signal import savgol_filter
 
 
 
-def general_application(cursor, name, function, window, parameters):
+def general_application(cursor, name, function, window, parameters, last_timestamp):
 
     window = int(window)
     cursor.execute("PRAGMA table_info(candles)")

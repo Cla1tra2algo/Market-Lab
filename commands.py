@@ -18,6 +18,8 @@ from importlib.util import module_from_spec, spec_from_file_location
 from inspect import signature
 
 
+from datetime import *
+
 BINANCE_TIMEFRAMES = [
     "1s",
     "1m",
@@ -43,8 +45,6 @@ logo = """
     ║║║╠═╣╠╦╝╠╩╗║╣  ║   ╦  ╔═╗╔╗         
     ╩ ╩╩ ╩╩╚═╩ ╩╚═╝ ╩   ║  ╠═╣╠╩╗   
   ╚═════════════════════╩═╝╩ ╩╚═╝    """
-
-
 
 
 def column_exists(cursor, table, column):
@@ -248,6 +248,78 @@ def _database_details(path):
         raise ValueError("The database name must follow data_SYMBOL_TIMEFRAME.db.")
     return parts[1], parts[2]
 
+def compute_series(cursor, root_name, function_, window_series, data, last_timestamp):
+
+    indic_function = function_[0]
+    origin = function_[-1]
+
+    if origin == "general_app":
+        for i in range(window_series[0], window_series[1], window_series[2]):
+            name = root_name
+            window = i
+            name += f"_{window}"
+            app.general_application(cursor, name, indic_function, window, data, last_timestamp)
+            cursor.connection.commit()
+            questionary.print(f"Computed {name} with window size {window}.", style="fg:green")
+
+    if origin == "custom":
+        for i in range(window_series[0], window_series[1], window_series[2]):
+            name = root_name
+            window = i
+            name += f"_{window}"
+            parameters = [data, window]
+            indic_function(cursor, parameters, name)
+            cursor.connection.commit()
+            questionary.print(f"Computed {name} with window size {window}.", style="fg:green")
+
+def run_function_custom_indic(cursor, indicator_name, indicator_, existing_parameters, pointer, config):
+
+    parameters = []
+    for i in range(indicator_[1]):
+        while True:
+            parameter = questionary.text(f"{indicator_[2][i][0]}", style=config).ask()
+
+            if indicator_[2][i][1](parameter, parameter_list=existing_parameters) is True:
+                parameters.append(parameter)
+                break
+
+    questionary.print(f"Selected parameters: {parameters}", style="fg:blue")
+
+
+    while True:
+        name = indicator_name
+        indicator_function = indicator_[0]
+
+        res = questionary.select("Append selected parameters to the indicator name ?", ["No", "Yes"], pointer=pointer, style=config).ask()
+
+        after_name = None
+
+        if res == "Yes":
+            after_name = ""
+            for i in range(len(parameters)):
+                after_name += f"_{parameters[i]}"
+
+            name += after_name
+
+        questionary.print(f"Event name: {name}")
+
+        if column_exists(cursor, "status", name) is True:
+            questionary.print("This event already exists.")
+            res = questionary.select("Do you want to choose another name for this event ? If you select 'No', the existing event will be replaced.", 
+                                    choices=["Yes", "No"], 
+                                    pointer=pointer, 
+                                    style=config).ask()
+
+            if res == "No":
+                break 
+
+        else: 
+            break
+
+    indicator_function(cursor, parameters, name)
+    cursor.connection.commit()
+    questionary.print("Indicator calculated.")
+
 def data_base(pointer, logo, config, err_color):
 
     rep = questionary.select("Would you like to create or open a database?", choices=["Create a database", "Open a database"], pointer=pointer, style=config).ask()
@@ -340,13 +412,81 @@ def data_base(pointer, logo, config, err_color):
         
         return conn, cursor, symbol, interval
 
-def download_data(cursor, symbol, interval, timestamp, conn, history):
+def download_data(cursor, symbol, interval, conn, history, config, err_color):
 
     print(""*80, end="\r")
     print("💾 Download Data")
-    
-    
-    de.extraction_binance(cursor, symbol, interval, timestamp)
+
+    start_timestamp = datetime(2017, 8, 17)
+
+    res = questionary.select(f"Do you want to download all the history of {symbol} {interval} ?", choices=["Select a precise date", "Download all the history"], style=config).ask()
+
+    if res == "Daownload all the history":
+        questionary.print("Define a start date (enter 'LAST' for select the last date): ")
+        while True:
+            while True:
+                start = questionary.form(year=questionary.text("Year: "),
+                                        month=questionary.text("Month: "),
+                                        day=questionary.text("Day: ")).ask()
+
+                if start["year"].upper() == "LAST":
+                    start_timestamp = cursor.select("""SELECT MAX(open_time) FROM candles""").fetchone()[0]
+                    break
+                
+                try:
+                    year = int(start["year"])
+                    month = int(start["Month"])
+                    day = int(start["day"])
+                    break
+
+                except ValueError:
+                    questionary.print("You must enter integers. ")
+
+            try:
+                start_timestamp = datetime(year, month, day)
+            except ValueError as e:
+                questionary.print(f"❌ The date you choose is invalid: {e}.", style=err_color)
+
+            if start_timestamp > datetime.today():
+                questionary.print("❌ You must choose a past date")
+            else: 
+                break
+
+        questionary.print("Select a end date (enter 'TODAY' for select the today date): ", )
+
+        while True:
+            while True:
+                end = questionary.form(year=questionary.text("Year: "),
+                                        month=questionary.text("Month: "),
+                                        day=questionary.text("Day: ")).ask()
+
+                if end["year"].upper() == "TODAY":
+                    end_timestamp = datetime.today()
+                    break
+                
+                try:
+                    year = int(end["year"])
+                    month = int(end["Month"])
+                    day = int(end["day"])
+                    break
+
+                except ValueError:
+                    questionary.print("❌ You must enter integers.", style=err_color)
+
+            try:
+                end_timestamp = datetime(year, month, day)
+            except ValueError as e:
+                questionary.print(f"❌ The date you choose is invalid: {e}.", style=err_color)
+
+            if end_timestamp > end_timestamp():
+                questionary.print(f"❌ You must choose a date after the {datetime.fromtimestamp(start_timestamp)}", style=err_color)
+            elif end_timestamp > datetime.today():
+                questionary.print("❌ You must choose a past date.", style=err_color)
+            else: 
+                break
+
+
+    de.extraction_binance(cursor, symbol, interval, start_timestamp*1000, end_timestamp*1000)
     conn.commit()
     
     print("Data downloaded.")
@@ -361,13 +501,16 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
 
     existing_parameters = [row[1] for row in cursor.execute("PRAGMA table_info(candles)").fetchall()]
 
+    
+# FUNCTION SELECTION 
+
     while True : 
         indicator_name = questionary.autocomplete("Select an indicator:", choices=indicator_list, style=config).ask()
 
         if indicator_name == "":
             print(""*80, end="\r")
             print("")
-            questionary.print("❌ Select a function.", style=err_color)
+            questionary.print("❌ Select an indicator.", style=err_color)
 
         elif indicator_name in indicator_list:
             indicator_ = indicator_dict[indicator_name]
@@ -375,81 +518,26 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
         else: 
             print(""*80, end="\r")
             print("")
-            questionary.print("❌ This function does not exist.", style=err_color)
+            questionary.print("❌ This function does not exist. Select a function from the list", style=err_color)
 
+###################################################
 
     indicator_function = indicator_[0]
 
+# CUSTOM INDICATOR 
+
     if indicator_[3] == "custom":
+        run_function_custom_indic(cursor=cursor, 
+                                  indicator_name=indicator_name, 
+                                  indicator_=indicator_,
+                                  existing_parameters=existing_parameters,
+                                  pointer=pointer,
+                                  config=config)
 
-        parameters = []
-        for i in range(indicator_[1]):
-            while True:
-                parameter = questionary.text(f"{indicator_[2][i][0]}").ask()
-
-                if indicator_[2][i][1](parameter, parameter_list=existing_parameters) is True:
-                    parameters.append(parameter)
-                    break
-
-        questionary.print(f"Selected parameters: {parameters}", style="fg:blue")
-
-        choice = indicator_name
-
-        while True:
-            name = choice
-    
-            res = questionary.select("Append selected parameters to the event name ?", ["No", "Yes"], pointer=pointer, style=config).ask()
-
-            after_name = None
-
-            if res == "Yes":
-                after_name = ""
-                for i in range(len(parameters)):
-                    after_name += f"_{parameters[i]}"
-
-                name += after_name
-
-            questionary.print(f"Event name: {name}")
-
-            if column_exists(cursor, "status", name) is True:
-                questionary.print("This event already exists.")
-                res = questionary.select("Do you wanna choose another name for this event ? If you select 'No', the existing event will be replaced.", 
-                                        choices=["Yes", "No"], 
-                                        pointer=pointer, 
-                                        style=config).ask()
-
-                if res == "No":
-                    break 
-
-            else: 
-                break
-
-        indicator_function(cursor, parameters, name)
-        cursor.connection.commit()
-        questionary.print("Indicator calculated.")
+################################################################
+# GENERAL APPLICATION
 
     else:
-        while True :
-            while True:
-                window = questionary.text("Window size:").ask()
-
-                try:
-                    window = int(window)
-                    break
-
-                except ValueError:
-                    print(""*80, end="\r")
-                    print("")
-                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
-
-            if window <= 0:
-                print(""*80, end="\r")
-                print("")
-                questionary.print("❌ You must enter an integer greater than 0", style=err_color)
-
-            else:
-                break
-
 
         parameters = []
 
@@ -457,9 +545,10 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
         existing_parameters = [row[1] for row in cursor.fetchall()]
 
 
-        if type(indicator_[-1]) is list:
+        if type(indicator_[2]) is list:
             print("")
-            questionary.print(f"Recommended parameters: {indicator_[-1]}", style="fg:blue")
+            questionary.print(f"Existing parameters: {existing_parameters.remove("open_time")}")
+            questionary.print(f"Recommended parameters: {indicator_[2]}", style="fg:blue")
 
         for i in range(indicator_[1]):
 
@@ -472,7 +561,7 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
 
         while True :
             while True :
-                name = input("Indicator name: ").strip()
+                name = questionary.text("Indicator name: ", style=config).ask()
                 if not _identifier_is_valid(name):
                     print(""*80, end="\r")
                     print("")
@@ -489,28 +578,100 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
                     name += f"_{parameters[i]}"
 
 
-            if window > 1:
-                name = name + "_" + str(window)
-
-
             if column_exists(cursor, "candles", name) is True:
                 questionary.print("This indicator already exists.")
-                res = questionary.select("Do you wanna choose another name for this indicator ? If you select 'No', the existing indicator will be replaced.", 
+                res = questionary.select("Do you want to choose another name for this indicator ? If you select 'No', the existing indicator will be replaced.", 
                                         choices=["Yes", "No"], 
                                         pointer=pointer, 
                                         style=config).ask()
 
                 if res == "No":
                     cursor.execute(f"ALTER TABLE candles DROP COLUMN {name}")
+                    cursor.connection.commit()
                     break
 
             else:
                 break
 
-        app.general_application(cursor, name, indicator_[0], window, parameters)
 
-        conn.commit()
-        history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
+        res = questionary.select("Do you want to compute a series of indicators with different window sizes?", ["No", "Series of indicators"], pointer=pointer, style=config).ask()
+
+        if res == "No":
+            while True :
+                while True:
+                    window = questionary.text("Window size:", style=config).ask()
+
+                    try:
+                        window = int(window)
+                        break
+
+                    except ValueError:
+                        print(""*80, end="\r")
+                        print("")
+                        questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+                if window <= 0:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+                else:
+                    break
+
+            if window > 1:
+                name = name + "_" + str(window)
+
+            app.general_application(cursor, name, indicator_[0], window, parameters, last_timestamp=1)
+            conn.commit()
+            history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
+
+
+        if res == "Series of indicators":
+
+            window_series = (None, None, None)
+
+            while True :
+                window_start = questionary.text("Start of the series:", styles=config).ask()
+                try:
+                    window_start = int(window_start)
+                    break
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+            window_series = (window_start, None, None)
+
+            while True :
+                window_end = questionary.text("End of the series:", style=config).ask()
+                try:
+                    window_end = int(window_end)
+                    if window_end > window_start:
+                        break
+                    else:
+                        questionary.print(f"❌ You must enter a value greater than the start of the serie (currantly {window_start})")
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+            window_series = (window_start, window_end, None)
+
+            while True :
+                window_step = questionary.text("Step of the series:", style=config).ask()
+                try:
+                    window_step = int(window_step)
+                    break
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+            window_series = (window_start, window_end, window_step)
+
+            compute_series(cursor, indicator_name, indicator_, window_series, existing_parameters, None)
+
+            conn.commit()
+            history.append(f"Serie {name} {window_series} {parameter} Calculated on {symbol} {interval}")
 
 def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dict, custom_event_dict):
     rep = questionary.select("Actions : ", ["Create custom_indicators.py", 
@@ -542,7 +703,7 @@ def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dic
 
     return None
  
-def calculate_stats(cursor, pointer):
+def calculate_stats(cursor, pointer, config):
 
     print(""*80, end="\r")
     print("📊 Calculate Statistics")
@@ -561,22 +722,34 @@ def calculate_stats(cursor, pointer):
         questionary.print("❌ Create an event before calculating statistics.", style="fg:red")
         return
     try:
-        x_axis = int(input("Number of quantile intervals: "))
+        x_axis = int(questionary.text("Number of quantile intervals: ", style=config).ask())
         if x_axis < 1:
             raise ValueError
     except ValueError:
         questionary.print("❌ Enter a positive integer.", style="fg:red")
         return
-    parameter = questionary.autocomplete("Select a parameter:", choices=existing_parameters).ask()
-    status    = questionary.autocomplete("Select a status:", choices=existing_status).ask()
-    if parameter not in existing_parameters or status not in existing_status:
-        questionary.print("❌ Select values from the lists.", style="fg:red")
-        return
+
+    while True:
+        questionary.print(f"Existing parameters: {existing_parameters.remove("open_time")}")
+        parameter = questionary.autocomplete("Select a parameter:", choices=existing_parameters).ask()
+        if parameter not in existing_parameters:
+            questionary.print("❌ Select a parameter from the list.", style="fg:red")      
+        else:
+            break
+
+    while True:
+        status = questionary.autocomplete("Select a status:", choices=existing_status).ask()
+        if status not in existing_status:
+            questionary.print("❌ Select a status from the list.", style="fg:red")
+        else:   
+            break
+
 
     if rep == "Classic chart":
         sm.stat_onevar(cursor, status, parameter, int(x_axis))
 
     else:
+        questionary.print(f"Existing parameters: {existing_parameters.remove("open_time")}")
         second_parameter = questionary.autocomplete("Select a second parameter:", choices=existing_parameters).ask()
         if second_parameter not in existing_parameters:
             questionary.print("❌ Select a parameter from the list.", style="fg:red")
@@ -597,32 +770,34 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
 
     while True :
         event_list = list(event_dict.keys())
-        choice = questionary.select("Select an event:", choices=event_list, pointer=pointer).ask()
+        name = questionary.select("Select an event:", choices=event_list, pointer=pointer).ask()
 
-        if choice not in event_list:
+        questionary.print(f"Existing events: {existing_parameters.remove("open_time")}")
+        if name not in event_list:
             questionary.print("❌ Select an event from the list.", style=err_color)
         else:
             break  
 
-    event = event_dict[choice]
+    event = event_dict[name]
     event_function = event[0]
 
+
+
+# CUSTOM INDICATORS
+
     if event[3] == "custom":
+
         parameters = []
         for i in range(event[1]):
             while True:
-                parameter = questionary.text(f"{event[2][i][0]}").ask()
+                parameter = questionary.text(f"{event[2][i][0]}", style=config).ask()
 
                 if event[2][i][1](parameter, parameter_list=existing_parameters) is True:
                     parameters.append(parameter)
                     break
 
-
         while True:
-            name = choice
-    
             res = questionary.select("Append selected parameters to the event name ?", ["No", "Yes"], pointer=pointer, style=config).ask()
-
             after_name = None
 
             if res == "Yes":
@@ -630,7 +805,6 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
                 for i in range(len(parameters)):
                     after_name += f"_{parameters[i]}"
 
-            
             if after_name != None:
                 name += after_name
 
@@ -653,13 +827,16 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
         cursor.connection.commit()
 
         questionary.print("Event calculated.")
+
+
+# GENERAL APPLICATION
     
     elif event[3] == "general_app":
 
 # WINDOW SELECTION
         while True :
             while True:
-                window = questionary.text("Window size (type 'ALL' for all data):").ask()
+                window = questionary.text("Window size (type 'ALL' for all data):", style=config).ask()
 
                 if str(window).upper() == "ALL":
                     window = "ALL"
@@ -701,6 +878,7 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
         for i in range(event[1]):
 
             while True:
+                questionary.print(f"Existing parameters: {existing_parameters.remove("open_time")}")
                 parameter = questionary.autocomplete(f"Select parameter {i + 1}:", choices=existing_parameters, style=config).ask()
                 if parameter not in existing_parameters:
                     questionary.print("❌ Select a parameter from the list.", style=err_color)
@@ -712,7 +890,6 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
         
     # NAME
         while True:
-            name = choice
     
             res = questionary.select("Append selected parameters to the event name ?", ["No", "Yes"], pointer=pointer, style=config).ask()
 
@@ -795,11 +972,15 @@ def plot_indic(cursor, err_color, pointer):
             questionary.print("No status is available yet.", style=err_color)
             status = None
         else:
-            choice = questionary.autocomplete("Select a status:", choices=existing_status).ask()
-            if choice not in existing_status:
-                questionary.print("❌ Select a status from the list.", style=err_color)
-                return
-            status = choice
+            while True:
+                status = questionary.autocomplete("Select a status: ", choices=existing_status).ask()
+
+
+                if status not in existing_status:
+                    questionary.print("❌ Select a status from the list.", style=err_color)
+
+                else:
+                    break
 
     else:
         status = None
@@ -809,7 +990,7 @@ def plot_indic(cursor, err_color, pointer):
 
     gp.plot(cursor, values, status)
 
-def delete_col(cursor, history, symbol, interval, pointer, config):
+def delete_col(cursor, history, symbol, interval, pointer, config, err_color):
 
     print(""*80, end="\r")
     print("🗑️  Delete a Column")
@@ -828,8 +1009,9 @@ def delete_col(cursor, history, symbol, interval, pointer, config):
         if not existing_parameters:
             questionary.print("No indicator can be deleted.", style="fg:yellow")
             return
-        parameters = questionary.autocomplete("Select an indicator:", choices=existing_parameters).ask()
 
+        questionary.print(f"Existing parameters: {existing_parameters}")
+        parameters = questionary.autocomplete("Select an indicator:", choices=existing_parameters).ask()
         if parameters in existing_parameters:
             rep = yes_no(f'Permanently delete "{parameters}"?', pointer, config)
 
@@ -849,7 +1031,14 @@ def delete_col(cursor, history, symbol, interval, pointer, config):
         if not existing_parameters:
             questionary.print("No status can be deleted.", style="fg:yellow")
             return
-        parameters = questionary.autocomplete("Select a status:", choices=existing_parameters).ask()
+
+        while True:
+            parameters = questionary.autocomplete("Select a status:", choices=existing_parameters).ask()
+
+            if parameters not in existing_parameters:
+                questionary.print("❌ Select a status from the list.", style=err_color)
+            else:
+                break
 
         if parameters in existing_parameters:
             rep = yes_no(f'Permanently delete "{parameters}"?', pointer, config)

@@ -70,11 +70,9 @@ while True :
                                 "📁 Open or Create a Database",
                                 "💾 Download Data",
                                 "📈 Calculate Indicators",
-                                "🧩 Manage Custom Indicators and Events",
                                 "📊 Calculate Statistics",
                                 "🎉 Calculate Events",
                                 "✏️  Plot",
-                                "🗑️  Delete a Column", 
                                 "📘 History",
                                 "⚙️  Settings",
                                 "👀 Take a Look",
@@ -102,35 +100,6 @@ while True :
             if res == "Yes":
                 break
             
-    if command == "🧩 Manage Custom Indicators and Events":
-
-        custom_registries = run_safely(
-            manage_custom_indicators_and_events,
-            pointer,
-            err_color,
-            custom_indicator_dict,
-            custom_event_dict,
-        )
-        if custom_registries is not None:
-            custom_indicator_dict, custom_event_dict = custom_registries
-            merged_indicators = run_safely(
-                merge_registries,
-                base_indicator_dict,
-                custom_indicator_dict,
-                "indicator_dict",
-            )
-            merged_events = run_safely(
-                merge_registries,
-                base_event_dict,
-                custom_event_dict,
-                "event_dict",
-            )
-            if merged_indicators is not None and merged_events is not None:
-                indicator_dict = merged_indicators
-                event_dict = merged_events
-                INDICATOR_LIST = list(indicator_dict.keys())
-        turn_page(logo, symbol, interval, logo_color, active_color=active_file)
-
     if command == "📈 Calculate Indicators":
         while True:
             run_safely(calculate_indic, indicator_dict=indicator_dict, 
@@ -151,7 +120,7 @@ while True :
         
     if command == "📊 Calculate Statistics":
 
-        run_safely(calculate_stats, cursor, pointer)
+        run_safely(calculate_stats, cursor, pointer, config=style)
 
     if command == "🎉 Calculate Events":
 
@@ -175,15 +144,6 @@ while True :
             turn_page(logo, symbol, interval, logo_color, active_color=active_file)
             if res == "Yes":
                 break
-   
-    if command == "🗑️  Delete a Column":
-        while True:
-            run_safely(delete_col, cursor, history, symbol, interval, pointer, config=style)
-            conn.commit()
-            res = skip(pointer, config=style)
-            turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
-            if res == "Yes":
-                break
         
     if command == "📘 History":
         while True:
@@ -194,19 +154,63 @@ while True :
                 break
 
     if command == "⚙️  Settings":
-        pointer, logo_color, questions_color, answers_color, err_color, active_file = settings(
+
+        res = questionary.select("Actions: ", ["🧩 Manage Custom Indicators and Events", "🗑️  Delete a Column", "🎨 Theme"]).ask()
+
+        if res == "🎨 Theme":
+            pointer, logo_color, questions_color, answers_color, err_color, active_file = settings(
+                pointer,
+                logo_color,
+                questions_color,
+                answers_color,
+                err_color,
+                active_file,
+            )
+            style = questionary.Style([
+                ("question", questions_color),
+                ("answer", answers_color),
+            ])
+            turn_page(logo, symbol, interval, logo_color, active_color=active_file)
+
+        if res == "🧩 Manage Custom Indicators and Events":
+            custom_registries = run_safely(
+            manage_custom_indicators_and_events,
             pointer,
-            logo_color,
-            questions_color,
-            answers_color,
             err_color,
-            active_file,
-        )
-        style = questionary.Style([
-            ("question", questions_color),
-            ("answer", answers_color),
-        ])
-        turn_page(logo, symbol, interval, logo_color, active_color=active_file)
+            custom_indicator_dict,
+            custom_event_dict,
+            )
+            if custom_registries is not None:
+                custom_indicator_dict, custom_event_dict = custom_registries
+                merged_indicators = run_safely(
+                    merge_registries,
+                    base_indicator_dict,
+                    custom_indicator_dict,
+                    "indicator_dict",
+                )
+                merged_events = run_safely(
+                    merge_registries,
+                    base_event_dict,
+                    custom_event_dict,
+                    "event_dict",
+                )
+                if merged_indicators is not None and merged_events is not None:
+                    indicator_dict = merged_indicators
+                    event_dict = merged_events
+                    INDICATOR_LIST = list(indicator_dict.keys())
+                turn_page(logo, symbol, interval, logo_color, active_color=active_file)
+
+        if res == "🗑️  Delete a Column":
+
+            while True:
+                run_safely(delete_col, cursor, history, symbol, interval, pointer, config=style, err_color=err_color)
+                conn.commit()
+                res = skip(pointer, config=style)
+                turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
+                if res == "Yes":
+                    break
+
+
         
     if command == "👀 Take a Look":
         while True:
