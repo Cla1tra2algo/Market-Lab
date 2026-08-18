@@ -209,13 +209,13 @@ def turn_page(logo, symbol, interval, logo_color, active_color):
     questionary.print(f"Working on {symbol} — {interval}", style=active_color)
     print("")
 
-def skip(pointer, config):
-    res = questionary.select("Return to the main menu?", choices=["Yes", "Continue"], pointer=pointer, style=config ).ask()
-    if res == "Yes":
+def skip(pointer, config, action):
+    res = questionary.select("Return to the main menu?", choices=["Back to the main menu", f"Stay in {action}"], pointer=pointer, style=config ).ask()
+    if res == "Back to the main menu":
         print(""*80, end="\r")
-        return res
+        return True
     else:
-        return res
+        return False
 
 def yes_no(question, pointer, config):
     rep = questionary.select(question, ["No", "Yes"], pointer=pointer, style=config).ask()
@@ -319,6 +319,23 @@ def run_function_custom_indic(cursor, indicator_name, indicator_, existing_param
     indicator_function(cursor, parameters, name)
     cursor.connection.commit()
     questionary.print("Indicator calculated.")
+
+def display_parameters(parameters):
+    for i in range(len(parameters)):
+        val = parameters[i]
+        if (i+1)%3 != 0:
+            if len(val) > 25:
+                x = len(val) - 25
+                val = val[:-x]
+                questionary.print(f"{val}" + " " * 5, end="")
+
+            else:
+                questionary.print(f"{val}" + " " * (30-(len(val))), end="")
+
+        else:
+            questionary.print(f"{val}" + " " * 15)
+
+    print("")
 
 def data_base(pointer, logo, config, err_color):
 
@@ -503,6 +520,7 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
 
     
 # FUNCTION SELECTION 
+    display_parameters(indicator_list)
 
     while True : 
         indicator_name = questionary.autocomplete("Select an indicator:", choices=indicator_list, style=config).ask()
@@ -543,11 +561,10 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
 
         cursor.execute("""PRAGMA table_info(candles)""")
         existing_parameters = [row[1] for row in cursor.fetchall()]
-
-
+        display_parameters(existing_parameters)
+        
         if type(indicator_[2]) is list:
             print("")
-            questionary.print(f"Existing parameters: {existing_parameters.remove("open_time")}")
             questionary.print(f"Recommended parameters: {indicator_[2]}", style="fg:blue")
 
         for i in range(indicator_[1]):
@@ -580,12 +597,12 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
 
             if column_exists(cursor, "candles", name) is True:
                 questionary.print("This indicator already exists.")
-                res = questionary.select("Do you want to choose another name for this indicator ? If you select 'No', the existing indicator will be replaced.", 
-                                        choices=["Yes", "No"], 
+                res = questionary.select(f"Do you want to choose another name for this indicator ? If you select 'Replace the actual {name}', the existing indicator will be replaced.", 
+                                        choices=["Choose another name", f"Replace the actual {name}"], 
                                         pointer=pointer, 
                                         style=config).ask()
 
-                if res == "No":
+                if res == f"Replace the actual {name}":
                     cursor.execute(f"ALTER TABLE candles DROP COLUMN {name}")
                     cursor.connection.commit()
                     break
@@ -594,9 +611,9 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
                 break
 
 
-        res = questionary.select("Do you want to compute a series of indicators with different window sizes?", ["No", "Series of indicators"], pointer=pointer, style=config).ask()
+        res = questionary.select("Do you want to compute a series of indicators with different window sizes?", ["Single indicator", "Series of indicators"], pointer=pointer, style=config).ask()
 
-        if res == "No":
+        if res == "Single indicator":
             while True :
                 while True:
                     window = questionary.text("Window size:", style=config).ask()
@@ -730,7 +747,7 @@ def calculate_stats(cursor, pointer, config):
         return
 
     while True:
-        questionary.print(f"Existing parameters: {existing_parameters.remove("open_time")}")
+        display_parameters(existing_parameters)
         parameter = questionary.autocomplete("Select a parameter:", choices=existing_parameters).ask()
         if parameter not in existing_parameters:
             questionary.print("❌ Select a parameter from the list.", style="fg:red")      
@@ -749,7 +766,7 @@ def calculate_stats(cursor, pointer, config):
         sm.stat_onevar(cursor, status, parameter, int(x_axis))
 
     else:
-        questionary.print(f"Existing parameters: {existing_parameters.remove("open_time")}")
+        display_parameters(existing_parameters)
         second_parameter = questionary.autocomplete("Select a second parameter:", choices=existing_parameters).ask()
         if second_parameter not in existing_parameters:
             questionary.print("❌ Select a parameter from the list.", style="fg:red")
@@ -772,7 +789,7 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
         event_list = list(event_dict.keys())
         name = questionary.select("Select an event:", choices=event_list, pointer=pointer).ask()
 
-        questionary.print(f"Existing events: {existing_parameters.remove("open_time")}")
+        display_parameters(existing_parameters)
         if name not in event_list:
             questionary.print("❌ Select an event from the list.", style=err_color)
         else:
@@ -870,6 +887,7 @@ def calculate_event(event_dict, pointer, cursor, err_color, config):
 
     # PARAMETERS SELECTION
 
+        display_parameters(existing_parameters)
 
         if type(event[-1]) is list:
             print("")
@@ -1006,11 +1024,12 @@ def delete_col(cursor, history, symbol, interval, pointer, config, err_color):
         existing_parameters = [row[1] for row in cursor.fetchall()]
         existing_parameters.remove("open_time")
 
+
         if not existing_parameters:
             questionary.print("No indicator can be deleted.", style="fg:yellow")
             return
 
-        questionary.print(f"Existing parameters: {existing_parameters}")
+        display_parameters(existing_parameters)
         parameters = questionary.autocomplete("Select an indicator:", choices=existing_parameters).ask()
         if parameters in existing_parameters:
             rep = yes_no(f'Permanently delete "{parameters}"?', pointer, config)
@@ -1033,6 +1052,9 @@ def delete_col(cursor, history, symbol, interval, pointer, config, err_color):
             return
 
         while True:
+
+            display_parameters(existing_parameters)
+
             parameters = questionary.autocomplete("Select a status:", choices=existing_parameters).ask()
 
             if parameters not in existing_parameters:
@@ -1089,7 +1111,30 @@ def take_look(history, pointer, indicator_dict, cursor, config):
 
         last_values = [r[0] for r in rows][-8:]
 
+        start_time = cursor.execute(f"""
+                                SELECT open_time
+                                FROM candles
+                                WHERE {copy} IS NOT NULL
+                                ORDER BY open_time ASC 
+                                LIMIT 1""").fetchone()[0]
+
+                                
+        end_time = cursor.execute(f"""
+                                SELECT open_time
+                                FROM candles
+                                WHERE {copy} IS NOT NULL
+                                ORDER BY open_time DESC
+                                LIMIT 1""").fetchone()[0]
+
+        start_timestamp = start_time/1000
+        end_timestamp = end_time/1000
+
+        start_date = datetime.fromtimestamp(start_timestamp)
+        end_date = datetime.fromtimestamp(end_timestamp)
+
         questionary.print(f"Calculated over {nb} candles", style="fg:blue")
+        questionary.print(f"From the {start_date} "\
+                          f"to the {end_date}.")
         questionary.print("Last values:", style="fg:blue")
 
         for i in range(len(last_values)):
