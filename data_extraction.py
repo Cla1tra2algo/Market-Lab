@@ -6,6 +6,8 @@ def extraction_binance(cursor, symbol, interval, start_timestamp, end_timestamp)
 
     url = "https://api.binance.com/api/v3/klines"
 
+    start_timestamp = int(start_timestamp)
+
     count = 0
     while True :
 
@@ -73,7 +75,7 @@ def extraction_binance(cursor, symbol, interval, start_timestamp, end_timestamp)
         last = data[-1]
 
         last_timestamp = last[0]
-        timestamp = last_timestamp + 1
+        start_timestamp = last_timestamp + 1
 
 def extraction_hyperliquid(cursor, symbol, interval, timestamp):
     """Download Hyperliquid candles, whose API returns dictionaries."""

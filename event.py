@@ -43,8 +43,6 @@ def peaks_detection(cursor, parameters, name):
     peaks_table = find_peaks(values, prominence=prominence_para)[0]
     lows_table = find_peaks(-values, prominence=prominence_para)[0]
 
-    print(f"Peaks detected at indices: {peaks_table}")
-    print(f"Lows detected at indices: {lows_table}")
 
     # Création de la liste des statuts
     status = [0] * len(open_times)
@@ -62,14 +60,13 @@ def peaks_detection(cursor, parameters, name):
 
     # Vérification de cohérence
     assert len(status) == len(open_times), \
-        "Le nombre de statuts ne correspond pas au nombre de bougies."
+        "The number of status does not corresponds to the number of candles."
     
     # Préparation des données
 
     data = list(zip(status,open_times))
 
-    print(f"Applying peaks detection with prominence: {prominence_para} on {data}... : {status}")
-
+    print(f"Applying peaks detection with prominence: {prominence_para} on {data}... ")
 
     cursor.executemany(f"""
     UPDATE status
