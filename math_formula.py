@@ -2,6 +2,7 @@ from math import *
 import numpy as np
 from scipy.signal import find_peaks
 from scipy.signal import savgol_filter
+import json as js
 
 def _isint(value):
     try:
@@ -590,12 +591,13 @@ def william(data):
 
 def filter_savgol(cursor, parameters, name):
 
-    if column_exists(cursor, "candles", name) is False:
+    if not column_exists(cursor, "candles", name):
         cursor.execute(f"ALTER TABLE candles ADD COLUMN {name}")
 
     else:
         cursor.execute(f"ALTER TABLE candles DROP COLUMN {name}")
-        cursor.execute(f"ALTER TABLE candles ADD COLUMN {name}")    
+        cursor.execute(f"ALTER TABLE candles ADD COLUMN {name}") 
+
 
     #print("\r" + " " * 80, end="\r")
 
@@ -628,6 +630,9 @@ def filter_savgol(cursor, parameters, name):
             f"{len(vwema_values)} < {window_length}"
         )
 
+    if window_length%2 == 0:
+        window_length += 1
+
     filtered = savgol_filter(
         vwema_values,
         window_length=window_length,
@@ -640,6 +645,13 @@ def filter_savgol(cursor, parameters, name):
         WHERE open_time = ?
     """,
     list(zip(filtered.tolist(), open_times)))
+
+    json_para = js.dumps(parameters)
+
+    cursor.execute(f"""
+        INSERT INTO indicators_metadata (column_name, function_name, parameters)
+        VALUES (?, ?, ?)
+""", (name, "filter_savgol", json_para))
 
     cursor.connection.commit()
 

@@ -17,8 +17,50 @@ from collections.abc import Mapping
 from importlib.util import module_from_spec, spec_from_file_location
 from inspect import signature
 
+from database_validation import *
 
 from datetime import *
+
+DISPLAY_WIDTH = 100
+
+
+def clear_display_line():
+    print(f"\r{' ' * DISPLAY_WIDTH}", end="\r")
+
+
+def display_blank_lines(count=1):
+    for _ in range(count):
+        print("")
+
+
+def display_title(title, style="fg:blue"):
+    clear_display_line()
+    display_blank_lines(1)
+    questionary.print(title, style=style)
+    display_blank_lines(1)
+
+
+def display_heading(title, style=None):
+    heading_style = style or "fg:blue"
+    display_title(title, heading_style)
+
+
+def display_info(message, style="fg:lightblue"):
+    questionary.print(message, style=style)
+
+
+def display_success(message, style="fg:green"):
+    questionary.print(message, style=style)
+
+
+def display_warning(message, style="fg:yellow"):
+    questionary.print(message, style=style)
+
+
+def display_error(message, style="fg:red"):
+    clear_display_line()
+    questionary.print(f"❌ {message}", style=style)
+
 
 BINANCE_TIMEFRAMES = [
     "1s",
@@ -47,9 +89,14 @@ logo = """
   ╚═════════════════════╩═╝╩ ╩╚═╝    """
 
 
-def column_exists(cursor, table, column):
-    cursor.execute(f"PRAGMA table_info({table})")
-    return column in {row[1] for row in cursor.fetchall()}
+
+class FunctionData():
+
+    def __init__(self, f):
+        self.func          = f[0]
+        self.nb_parameters = f[1]
+        self.recommended_parameters = f[2]
+        self.func_type     = f[3]
 
 
 CUSTOM_FILE = Path(__file__).resolve().parent / "custom_indicators.py"
@@ -93,6 +140,8 @@ event_dict = {
     "close_above_open": (close_above_open, 2, ["close", "open"]),
 }
 '''
+
+tables_list = ("candles", "status", "indicators_metadata")
 
 def _open_in_editor(path, err_color):
     editor = os.environ.get("EDITOR")
@@ -203,16 +252,16 @@ def turn_page(logo, symbol, interval, logo_color, active_color):
 
     console = Console()
     console.clear()
-    print("")
+    display_blank_lines(1)
     questionary.print(logo, style=logo_color)
-    print("")
+    display_blank_lines(1)
     questionary.print(f"Working on {symbol} — {interval}", style=active_color)
-    print("")
+    display_blank_lines(1)
 
 def skip(pointer, config, action):
     res = questionary.select("Return to the main menu?", choices=["Back to the main menu", f"Stay in {action}"], pointer=pointer, style=config).ask()
     if res == "Back to the main menu":
-        print(""*80, end="\r")
+        clear_display_line()
         return True
     else:
         return False
@@ -220,18 +269,6 @@ def skip(pointer, config, action):
 def yes_no(question, pointer, config):
     rep = questionary.select(question, ["No", "Yes"], pointer=pointer, style=config).ask()
     return rep
-
-def _database_schema_is_valid(path):
-    try:
-        with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True) as connection:
-            tables = {
-                row[0] for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                )
-            }
-            return {"candles", "status"}.issubset(tables)
-    except sqlite3.Error:
-        return False
 
 def _identifier_is_valid(value):
     return isinstance(value, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is not None
@@ -248,75 +285,117 @@ def _database_details(path):
         raise ValueError("The database name must follow data_SYMBOL_TIMEFRAME.db.")
     return parts[1], parts[2]
 
-def compute_series(cursor, root_name, function_, window_series, data, last_timestamp, indications_color):
+def compute_series(cursor, root_name, function_, window_series, data, last_timestamp, indications_color, index, err_color, config, pointer):
 
-    indic_function = function_[0]
-    origin = function_[-1]
+    model = FunctionData(function_)
 
-    if origin == "general_app":
+    f = model.func
+    o = model.func_type
+
+    if o == "general_app":
         for i in range(window_series[0], window_series[1], window_series[2]):
             name = root_name
             window = i
             name += f"_{window}"
-            app.general_application(cursor, name, indic_function, window, data, last_timestamp)
+
+            name = name_verification(cursor=cursor, 
+                                     config=config, 
+                                     pointer=pointer, 
+                                     name=name, 
+                                     err_color=err_color,
+                                     table="candles")
+
+            if not name:
+                continue
+
+            app.general_application(cursor, name, f, window, data, last_timestamp)
             cursor.connection.commit()
             questionary.print(f"Computed {name} with window size {window}.", style=indications_color)
 
-    if origin == "custom":
+    if o == "custom":
         for i in range(window_series[0], window_series[1], window_series[2]):
             name = root_name
             window = i
             name += f"_{window}"
-            parameters = [data, window]
-            indic_function(cursor, parameters, name)
+            data[index] = window
+
+            name = name_verification(cursor, config, pointer, name, err_color=err_color, table="candles")
+
+            if not name:
+                continue
+
+            f(cursor, data, name)
             cursor.connection.commit()
             questionary.print(f"Computed {name} with window size {window}.", style=indications_color)
 
-def parameters_custom_indic(cursor, indicator_name, indicator_, existing_parameters, pointer, config):
+def name_definition(config, err_color, name):
+    root_name = name
+    while True:
+        name = questionary.text("Define another name: ", default=name, style=config).ask()
+
+        if not _identifier_is_valid(name):
+            questionary.print("❌ Use a name starting with a letter or underscore; use only letters, numbers, and underscores.", style=err_color)
+
+        elif root_name == name:
+            questionary.print(f"❌ You must define a different name (actual name : {name})", style=err_color)
+
+        else:
+            break
+    return name
+
+def name_verification(cursor, config, pointer, name, err_color, table):
+
+        if column_exists(cursor, table, name):
+            res = questionary.select(f"❌ {name} already exixts. Do you want to replace the actual {name} or define another name for {name}?",
+                                    choices=[f"Define another name for {name}", 
+                                                f"Replace the actual {name}", 
+                                                f"Do not calculate {name}"], pointer=pointer).ask()
+
+            if res == f"Define another name for {name}":
+                    
+                name = name_definition(config=config, err_color=err_color, name=name)
+    
+                return name
+
+            elif res == f"Replace the actual {name}":
+                cursor.execute(f"""
+                                ALTER TABLE candles
+                                DROP COLUMN {name}
+                        """)
+                cursor.execute(f"""
+                                DELETE FROM indicators_metadata
+                                WHERE column_name = ?
+                        """, (name,))
+                cursor.connection.commit()
+                
+                return name
+
+            else:
+                return None
+
+        else:
+            return name
+
+def parameters_custom_indic(indicator_, existing_parameters, config, indications_color):
 
     parameters = []
-    for i in range(indicator_[1]):
-        while True:
-            parameter = questionary.text(f"{indicator_[2][i][0]}", style=config).ask()
 
-            if indicator_[2][i][1](parameter, parameter_list=existing_parameters) is True:
+    model = FunctionData(indicator_)
+
+    nb = model.nb_parameters           # nb of parameters 
+    rp = model.recommended_parameters  # recommended paramters
+
+    for i in range(nb):
+        while True:
+            parameter = questionary.text(f"{rp[i][0]}", style=config).ask()
+
+            if rp[i][1](parameter, parameter_list=existing_parameters) is True:
                 parameters.append(parameter)
                 break
 
-    questionary.print(f"Selected parameters: {parameters}", style="fg:blue")
-
-
-    while True:
-        name = indicator_name
-
-        res = questionary.select("Append selected parameters to the indicator name ?", ["No", "Append selected paramters to the indicator name"], pointer=pointer, style=config).ask()
-
-        after_name = None
-
-        if res == "Append selected paramters to the indicator name":
-            after_name = ""
-            for i in range(len(parameters)):
-                after_name += f"_{parameters[i]}"
-
-            name += after_name
-
-        questionary.print(f"Event name: {name}")
-
-        if column_exists(cursor, "status", name) is True:
-            questionary.print("This event already exists.")
-            res = questionary.select("Do you want to choose another name for this event ? If you select 'No', the existing event will be replaced.", 
-                                    choices=["Yes", "No"], 
-                                    pointer=pointer, 
-                                    style=config).ask()
-
-            if res == "No":
-                break 
-
-        else: 
-            break
+    questionary.print(f"Selected parameters: {parameters}", style=indications_color)
 
     return parameters
-
 
 def display_parameters(parameters, color):
     for i in range(len(parameters)):
@@ -343,7 +422,7 @@ def data_base(pointer, logo, config, err_color):
     if rep == "Open a database":
 
         file = questionary.path("Database file (.db):", validate=lambda chemin: checking_file(chemin, err_color)).ask()
-        if not _database_schema_is_valid(file):
+        if not is_marketlad_database(file):
             questionary.print("❌ This is not a Market Lab database.", style=err_color)
             return data_base(pointer, logo, config, err_color)
 
@@ -356,8 +435,10 @@ def data_base(pointer, logo, config, err_color):
             questionary.print(f"❌ {error}", style=err_color)
             return data_base(pointer, logo, config, err_color)
 
-        return conn, cursor, symbol, interval
-        
+        selected_database = MarketLabDataBase(name=file, symbol=symbol, timeframe=interval)
+        selected_database.database_commit()
+
+        return selected_database
 
     if rep == "Create a database":
 
@@ -395,46 +476,22 @@ def data_base(pointer, logo, config, err_color):
         if not symbol.endswith("USDT"):
             symbol += "USDT"
 
-        conn = sqlite3.connect(f"data_{symbol}_{interval}.db")
-        cursor = conn.cursor()
+        name = "marketlab_database" + "_" + str(symbol) + "_" + str(interval)
 
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS candles(
-            open_time INTEGER PRIMARY KEY,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
-            volume REAL, 
-            close_time REAL,
-            vwema,
-            vwema_savgol,
-            quote_asset_vol REAL, 
-            number_of_trades REAL,
-            taker_buy_base_asset_volume REAL,
-            taker_buy_quote_asset_volume REAL,
-            statut REAL
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS status(
-            open_time INTEGER PRIMARY KEY
-            )
-    """)
-
-
-        conn.commit()
+        new_database = MarketLabDataBase(name=name, symbol=symbol, timeframe=interval)
+        new_database.database_commit()
         
-        return conn, cursor, symbol, interval
+        return new_database
 
-def download_data(cursor, symbol, interval, conn, history, config, err_color, pointer):
+def download_data(active_database, history, config, err_color, pointer):
 
     print(""*80, end="\r")
     print("💾 Download Data")
 
 
-    res = questionary.select(f"Do you want to download all the history of {symbol} {interval} ?", choices=["Select a precise date", "Download all the history"], style=config, pointer=pointer).ask()
+    res = questionary.select(f"Do you want to download all the history of {active_database.symbol} {active_database.timeframe} ?", 
+                             choices=["Select a precise date", "Download all the history"], 
+                             style=config, pointer=pointer).ask()
 
     if res == "Select a precise date":
         questionary.print("Define a start date (enter 'LAST' for select the last date): ")
@@ -445,8 +502,7 @@ def download_data(cursor, symbol, interval, conn, history, config, err_color, po
                                     day=questionary.text("Day: ", style=config)).ask()
 
             if start["year"].upper() == "LAST":
-                start_timestamp = cursor.execute("""SELECT MAX(open_time) 
-                                                FROM candles""").fetchone()[0] 
+                start_timestamp = active_database.get_start_timestamp() 
                 break
 
             else:
@@ -519,24 +575,34 @@ def download_data(cursor, symbol, interval, conn, history, config, err_color, po
         end_timestamp = datetime.today()
         end_timestamp = end_timestamp.timestamp() * 1000
 
-    de.extraction_binance(cursor, symbol, interval, start_timestamp, end_timestamp)
-    conn.commit()
+    de.extraction_binance(cursor=active_database.cursor, 
+                          symbol=active_database.sybol,
+                          interval=active_database.timeframe,
+                          start_timestamp=start_timestamp, 
+                          end_timestamp=end_timestamp)
+
+    active_database.database_commit()
     
     print("Data downloaded.")
     
-    history.append(f"{symbol} {interval} Downloaded ")
+    history.append(f"{active_database.symbol} {active_database.timeframe} Downloaded ")
    
-def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbol, interval, pointer, config, err_color, indications_color):
+def calculate_indic(active_database, indicator_dict, indicator_list, history, pointer, config, err_color, indications_color):
+
+    symbol = active_database.symbol
+    timeframe = active_database.timeframe
+    cursor = active_database.cursor
+    conn = active_database.conn
 
     print(""*80, end="\r")
     print("📈 Calculate Indicators")
     print("")
 
-    existing_parameters = [row[1] for row in cursor.execute("PRAGMA table_info(candles)").fetchall()]
+    existing_parameters = [row[1] for row in active_database.cursor.execute("PRAGMA table_info(candles)").fetchall()]
 
 
-    
-# FUNCTION SELECTION 
+# FUNCTION SELECTION  ------------------
+
     display_parameters(indicator_list, color=indications_color)
 
     while True : 
@@ -555,15 +621,19 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
             print("")
             questionary.print("❌ This function does not exist. Select a function from the list", style=err_color)
 
-    function_type = indicator_[3]
+    model = FunctionData(indicator_)
 
-###################################################
+    function_type = model.func_type
+    f = model.func
+    recommended_para = model.recommended_parameters
+
+# PARAMETERS SELECTION  -----------------
 
     parameters = []
 
-    cursor.execute("""PRAGMA table_info(candles)""")
-    existing_parameters = [row[1] for row in cursor.fetchall()]
     display_parameters(existing_parameters, color=indications_color)
+
+    # GENERAL APP -------------------
 
     if function_type == "general_app":
         if type(indicator_[2]) is list:
@@ -576,48 +646,31 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
                 return
             parameters.append(parameter)
 
+    # CUSTOM -----------------
+
     else:
-        parameters = parameters_custom_indic(cursor=cursor, indicator_name=indicator_name, indicator_=indicator_, existing_parameters=existing_parameters, pointer=pointer, cnofig=config)
+        parameters = parameters_custom_indic(indicator_=indicator_, 
+                                                existing_parameters=existing_parameters, 
+                                                config=config, 
+                                                indications_color=indications_color)
 
-    while True :
-        while True :
-            name = questionary.text("Indicator name: ", style=config).ask()
-            if not _identifier_is_valid(name):
-                print(""*80, end="\r")
-                print("")
-                questionary.print("❌ Use a name starting with a letter or underscore; use only letters, numbers, and underscores.", style=err_color)
+# NAME DEFINITION --------------
 
-            else: 
-                break
+    root_name = f.__name__
+    for i in range(len(parameters)):
+        root_name += "_"+str(parameters[i])
 
-        after_name = questionary.select("Append selected parameters to the indicator name ?",
-                                            ["No", "Append selected parameter to the indicator name."], pointer=pointer, style=config).ask()
+# -------------------------
 
-        if after_name == "Append selected parameter to the indicator name.":
-            for i in range(len(parameters)):
-                name += f"_{parameters[i]}"
+    res_serie = questionary.select("Do you want to compute a series of indicators with different window sizes?", ["Single indicator", "Series of indicators"], pointer=pointer, style=config).ask()
 
+#   SINGLE INDICATOR -------------------------------------------
 
-        if column_exists(cursor, "candles", name) is True:
-            questionary.print("This indicator already exists.")
-            res = questionary.select(f"Do you want to choose another name for this indicator ? If you select 'Replace the actual {name}', the existing indicator will be replaced.", 
-                                    choices=["Choose another name", f"Replace the actual {name}"], 
-                                    pointer=pointer, 
-                                    style=config).ask()
+    if res_serie == "Single indicator":
 
-            if res == f"Replace the actual {name}":
-                cursor.execute(f"ALTER TABLE candles DROP COLUMN {name}")
-                cursor.connection.commit()
-                break
+        # GENERAL APP
 
-        else:
-            break
-
-    res = questionary.select("Do you want to compute a series of indicators with different window sizes?", ["Single indicator", "Series of indicators"], pointer=pointer, style=config).ask()
-
-    if res == "Single indicator":
-
-        if indicator_[3] == "general_app":
+        if function_type == "general_app":
             while True :
                 while True:
                     window = questionary.text("Window size:", style=config).ask()
@@ -635,75 +688,174 @@ def calculate_indic(indicator_dict, indicator_list, cursor, conn, history, symbo
                     print(""*80, end="\r")
                     print("")
                     questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+                    continue
 
                 else:
+                    if window > 1:
+                        name = root_name + "_" + str(window)
+
+                name = name_verification(cursor=active_database.cursor,
+                                         config=config,
+                                         pointer=pointer,
+                                         data=parameters,
+                                         name=name,
+                                         err_color=err_color,
+                                         table="candles")
+
+                if not name:
                     break
 
-            if window > 1:
-                name = name + "_" + str(window)
+            if not name:
+                return
 
-            app.general_application(cursor, name, indicator_[0], window, parameters, last_timestamp=1)
+            app.general_application(active_database.cursor, name, f, window, parameters, last_timestamp=1)
             display_parameters(existing_parameters, indications_color)
 
+        # CUSTOM
+
         else: 
-            run_function_custom_indic(cursor=cursor, 
-                                        indicator_name=indicator_name, 
-                                        indicator_=indicator_,
-                                        existing_parameters=existing_parameters,
-                                        pointer=pointer,
-                                        config=config)
 
-        conn.commit()
-        history.append(f"{name} {window} {parameters} Calculated on {symbol} {interval}")
+            name = name_verification(cursor=active_database.cursor,
+                                     config=config,
+                                     pointer=pointer,
+                                     data=parameters,
+                                     name=root_name,
+                                     err_color=err_color,
+                                     table="candles")
 
+            if not name:
+                return 
 
+            f(active_database.cursor, parameters, name)
+        
+            
 
-    if res == "Series of indicators":
+# SERIES OF INDICATOR --------------------
+
+    if res_serie == "Series of indicators":
 
         window_series = (None, None, None)
 
-        while True :
-            window_start = questionary.text("Start of the series:", style=config).ask()
-            try:
-                window_start = int(window_start)
-                break
-            except ValueError:
-                print(""*80, end="\r")
-                print("")
-                questionary.print("❌ You must enter an integer greater than 0", style=err_color)
-        window_series = (window_start, None, None)
+        # GENERAL APP -----------------------
 
-        while True :
-            window_end = questionary.text("End of the series:", style=config).ask()
-            try:
-                window_end = int(window_end)
-                if window_end > window_start:
+        if function_type == "general_app":
+            while True :
+                window_start = questionary.text("Start of the series:", style=config).ask()
+                try:
+                    window_start = int(window_start)
                     break
-                else:
-                    questionary.print(f"❌ You must enter a value greater than the start of the serie (currantly {window_start})")
-            except ValueError:
-                print(""*80, end="\r")
-                print("")
-                questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+            window_series = (window_start, None, None)
 
-        window_series = (window_start, window_end, None)
+            while True :
+                window_end = questionary.text("End of the series:", style=config).ask()
+                try:
+                    window_end = int(window_end)
+                    if window_end > window_start:
+                        break
+                    else:
+                        questionary.print(f"❌ You must enter a value greater than the start of the serie (currantly {window_start})")
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
 
-        while True :
-            window_step = questionary.text("Step of the series:", style=config).ask()
-            try:
-                window_step = int(window_step)
-                break
-            except ValueError:
-                print(""*80, end="\r")
-                print("")
-                questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+            window_series = (window_start, window_end, None)
 
-        window_series = (window_start, window_end, window_step)
+            while True :
+                window_step = questionary.text("Step of the series:", style=config).ask()
+                try:
+                    window_step = int(window_step)
+                    break
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
 
-        compute_series(cursor, indicator_name, indicator_, window_series, existing_parameters, indications_color=indications_color)
+            window_series = (window_start, window_end, window_step)
 
-        conn.commit()
-        history.append(f"Serie {name} {window_series} {parameter} Calculated on {symbol} {interval}")
+        
+            root_name = name
+            for i in range(window_series[0], window_series[1], window_series[2]):
+                name = root_name
+                window = i
+                name += f"_{window}"
+
+                if column_exists(active_database.cursor, "candles", name):
+                    res = questionary.select(f"❌ {name} already exixts. Do you want to replace the actual {name} or define another name for {name}?",
+                        choices=[f"Define another name for {name}", f"Replace the actual {name}"],
+                        style=err_color).ask()
+
+        # CUSTOM ----------------------
+
+        else:
+
+            choices = [r[0] for r in recommended_para]
+
+            serie_on_parameter  = questionary.select("On which parameter do you what to apply the serie ?", 
+                               choices=choices, 
+                               pointer=pointer, 
+                               style=config).ask()
+
+            index_serie_on_para = choices.index(serie_on_parameter)
+    
+            while True :
+                window_start = questionary.text("Start of the series:", style=config).ask()
+                try:
+                    window_start = int(window_start)
+                    break
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+            window_series = (window_start, None, None)
+
+            while True :
+                window_end = questionary.text("End of the series:", style=config).ask()
+                try:
+                    window_end = int(window_end)
+                    if window_end > window_start:
+                        break
+                    else:
+                        questionary.print(f"❌ You must enter a value greater than the start of the serie (currantly {window_start})")
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+            window_series = (window_start, window_end, None)
+
+            while True :
+                window_step = questionary.text("Step of the series:", style=config).ask()
+                try:
+                    window_step = int(window_step)
+                    break
+                except ValueError:
+                    print(""*80, end="\r")
+                    print("")
+                    questionary.print("❌ You must enter an integer greater than 0", style=err_color)
+
+            window_series = (window_start, window_end, window_step)
+
+        print(f"{root_name}")
+
+        compute_series(cursor, 
+                        root_name=root_name, 
+                        function_=indicator_, 
+                        window_series=window_series, 
+                        data=parameters, 
+                        indications_color=indications_color, 
+                        err_color=err_color,
+                        pointer=pointer,
+                        config=config,
+                        index=index_serie_on_para, 
+                        last_timestamp=1)
+
+    conn.commit()
+    history.append(f"Serie {root_name} {window_series} {parameters} Calculated on {symbol} {timeframe}")
 
 def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dict, custom_event_dict, config):
     rep = questionary.select("Actions : ", ["Create custom_indicators.py", 
@@ -735,7 +887,9 @@ def manage_custom_indicators_and_events(pointer, err_color, custom_indicator_dic
 
     return None
  
-def calculate_stats(cursor, pointer, config, indications_color):
+def calculate_stats(active_database, pointer, config, indications_color):
+
+    cursor = active_database.cursor
 
     print(""*80, end="\r")
     print("📊 Calculate Statistics")
@@ -788,7 +942,9 @@ def calculate_stats(cursor, pointer, config, indications_color):
             return
         sm.stat_twovar(cursor, status, parameter, second_parameter, int(x_axis))
         
-def calculate_event(event_dict, pointer, cursor, err_color, config, indications_color):
+def calculate_event(event_dict, pointer, active_database, err_color, config, indications_color):
+
+    cursor = active_database.cursor
 
     print(""*80, end="\r")
     print("🎉 Calculate Events")
@@ -965,7 +1121,9 @@ def calculate_event(event_dict, pointer, cursor, err_color, config, indications_
         app.ganeral_event_application(cursor, name, event_function, window, parameters)
         questionary.print("Event calculated.")
 
-def plot_indic(cursor, err_color, pointer, config, indications_color):
+def plot_indic(active_database, err_color, pointer, config, indications_color):
+
+    cursor = active_database.cursor
 
     print(""*80, end="\r")
     print("✏️  Plot")
@@ -1027,7 +1185,12 @@ def plot_indic(cursor, err_color, pointer, config, indications_color):
 
     gp.plot(cursor, values, status)
 
-def delete_col(cursor, history, symbol, interval, pointer, config, err_color, indications_color):
+def delete_col(active_database, history, pointer, config, err_color, indications_color):
+
+    cursor = active_database.cursor
+    symbol = active_database.symbol
+    timeframe = active_database.timeframe
+    
 
     print(""*80, end="\r")
     print("🗑️  Delete a Column")
@@ -1057,7 +1220,7 @@ def delete_col(cursor, history, symbol, interval, pointer, config, err_color, in
                 cursor.execute(f"""
                     ALTER TABLE candles
                     DROP COLUMN {_quote_identifier(parameters)}""")
-                history.append(f"{parameters} deleted in {symbol} {interval}.")
+                history.append(f"{parameters} deleted in {symbol} {timeframe}.")
 
 
     if target == "A status":
@@ -1088,26 +1251,25 @@ def delete_col(cursor, history, symbol, interval, pointer, config, err_color, in
                 cursor.execute(f"""
                     ALTER TABLE status
                     DROP COLUMN {_quote_identifier(parameters)}""")
-                history.append(f"{parameters} deleted in {symbol} {interval}.")
+                history.append(f"{parameters} deleted in {symbol} {timeframe}.")
          
-def action_history(history):
+def action_history(history, heading_color="fg:cyan"):
 
-    print(""*80, end="\r")
-    print("📖 History")
-    print("")
+    display_heading("📖 History", style=heading_color)
 
     if len(history) == 0:
         print("The action history is empty.")
 
-        
     else:
         for i in range(len(history)):
             print(history[i])
 
-def take_look(history, pointer, indicator_dict, cursor, config, indications_color):
+def take_look(history, pointer, indicator_dict, active_database, config, indications_color):
     print(""*80, end="\r")
     print("👀 Inspect Data")
     print("")
+
+    cursor = active_database.cursor
 
     cursor.execute("""PRAGMA table_info(candles)""")
     indicator_dict = [row[1] for row in cursor.fetchall()]
@@ -1192,7 +1354,7 @@ def take_look(history, pointer, indicator_dict, cursor, config, indications_colo
     history.append(f"Inspected {copy}.")
     return None
 
-def settings(pointer, logo_color, questions_color, answers_color, err_color, active_color, config, indications_color):
+def settings(pointer, logo_color, questions_color, answers_color, err_color, active_color, config, indications_color, heading_color):
     color_list = [
             "black",
             "red",
@@ -1227,7 +1389,8 @@ def settings(pointer, logo_color, questions_color, answers_color, err_color, act
             "Answers": "answers_color",
             "Errors": "err_color",
             "Active database": "active_color",
-            "Indications": "indications_color"
+            "Indications": "indications_color",
+            "Heading": "heading_color"
         }
         label = questionary.select("Choose an element:", choices=list(labels), pointer=pointer, style=config).ask()
         color = questionary.select("Choose a color:", choices=color_list, pointer=pointer, style=config).ask()
@@ -1240,9 +1403,11 @@ def settings(pointer, logo_color, questions_color, answers_color, err_color, act
             answers_color = color
         elif labels[label] == "err_color":
             err_color = color
-        elif label[label] == "active_color":
+        elif labels[label] == "active_color":
             active_color = color
-        else:
+        elif labels[label] == "indications_color":
             indications_color = color
+        else:
+            heading_color = color
 
-    return pointer, logo_color, questions_color, answers_color, err_color, active_color, indications_color
+    return pointer, logo_color, questions_color, answers_color, err_color, active_color, indications_color, heading_color

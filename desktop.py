@@ -28,6 +28,7 @@ answers_color = "fg:orange"
 err_color = "fg:red"
 active_file = "fg:yellow"
 indications_color = "fg:green"
+heading_color = "fg:cyan"
 
 style = questionary.Style([("question", questions_color), ("answer", answers_color)])
 
@@ -35,7 +36,6 @@ style = questionary.Style([("question", questions_color), ("answer", answers_col
 base_indicator_dict = mf.indicator_dict
 custom_indicator_dict = {}
 indicator_dict = dict(base_indicator_dict)
-
 
 
 base_event_dict = ev.base_event_dict
@@ -50,7 +50,7 @@ questionary.print(logo, style=logo_color)
 print("")
 
 
-conn, cursor, symbol, interval = data_base(pointer, logo, config=style, err_color=err_color)
+conn, cursor, symbol, interval, active_database = data_base(pointer, logo, config=style, err_color=err_color)
 conn.commit()
 
 history = []
@@ -59,7 +59,7 @@ history = []
 def run_safely(action, *args, **kwargs):
     try:
         return action(*args, **kwargs)
-    except (RuntimeError, ValueError, sqlite3.Error) as error:
+    except (RuntimeError, ValueError, sqlite3.Error) as error: 
         questionary.print(f"❌ {error}", style=err_color)
         return None
 
@@ -75,7 +75,8 @@ while True :
                                 "✏️  Plot",
                                 "📘 History",
                                 "⚙️  Settings",
-                                "👀 Take a Look",
+                                "👀 Take a "
+                                "Look",
                                 "🚪 Exit"], pointer=pointer, style=style).ask()
 
     print(""*80, end="\r")
@@ -103,7 +104,6 @@ while True :
                             conn=conn,
                             indications_color=indications_color)
             
-
             res = skip(pointer, config=style, action="📈 Calculate Indicators")
             turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
             if res is True:
@@ -139,7 +139,7 @@ while True :
         
     if command == "📘 History":
         while True:
-            action_history(history)
+            action_history(history, heading_color=heading_color)
             res = skip(pointer, config=style, action="📘 History")
             turn_page(logo, symbol, interval, logo_color=logo_color, active_color=active_file)
             if res is True:
@@ -153,7 +153,7 @@ while True :
 
             if res == "🎨 Theme":
                 while True:
-                    pointer, logo_color, questions_color, answers_color, err_color, active_file, indications_color = settings(
+                    pointer, logo_color, questions_color, answers_color, err_color, active_file, indications_color, heading_color = settings(
                         pointer,
                         logo_color,
                         questions_color,
@@ -161,7 +161,8 @@ while True :
                         err_color,
                         active_file,
                         config=style,
-                        indications_color=indications_color
+                        indications_color=indications_color,
+                        heading_color=heading_color
                     )
                     style = questionary.Style([
                         ("question", questions_color),

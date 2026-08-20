@@ -1,13 +1,11 @@
 import sqlite3 
 import math_formula as mf
+import json as js
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from scipy.signal import savgol_filter
-
-
-
 
 def general_application(cursor, name, function, window, parameters, last_timestamp):
 
@@ -21,11 +19,32 @@ def general_application(cursor, name, function, window, parameters, last_timesta
             ADD COLUMN {name} REAL
     """)
 
+        cursor.connection.commit()
+
     else:
         cursor.execute(f"""
             ALTER TABLE candles
             DROP COLUMN {name}""")
 
+        cursor.connection.commit()
+
+        cursor.execute(f"""
+            ALTER TABLE candles 
+            ADD COLUMN {name} REAL
+    """)
+        cursor.connection.commit()
+
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS indicators_metadata(
+        column_name TEXT PRIMARY KEY,
+        function_name TEXT,
+        parameters TEXT
+        )
+""")
+
+    cursor.connection.commit()
+    
     rows = np.array([])
     mat = []
 
@@ -74,7 +93,6 @@ def general_application(cursor, name, function, window, parameters, last_timesta
 
     windows_array = np.array(windows_array)
 
-
     for i in range(len(windows_array[0])):  #boucle pour faire passer toutes les fenetres
 
         data_s = []
@@ -104,7 +122,15 @@ def general_application(cursor, name, function, window, parameters, last_timesta
     UPDATE candles
     SET {name} = ?
     WHERE open_time = ?
-    """, results)
+""", results)
+
+
+    json_para = js.dumps(parameters)
+
+    cursor.execute(f"""
+        INSERT INTO indicators_metadata (column_name, function_name, parameters)
+        VALUES (?, ?, ?)
+""", (name, function.__name__, json_para))
 
 
 def ganeral_event_application(cursor, name,function, window, data):
@@ -180,9 +206,4 @@ def ganeral_event_application(cursor, name,function, window, data):
     cursor.executemany(f"UPDATE status SET {name} = ? WHERE open_time = ?", results)
     cursor.connection.commit()
 
-
-    
-
-
-        
 

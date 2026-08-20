@@ -77,42 +77,4 @@ def extraction_binance(cursor, symbol, interval, start_timestamp, end_timestamp)
         last_timestamp = last[0]
         start_timestamp = last_timestamp + 1
 
-def extraction_hyperliquid(cursor, symbol, interval, timestamp):
-    """Download Hyperliquid candles, whose API returns dictionaries."""
-    payload = {
-        "type": "candleSnapshot",
-        "req": {
-            "coin": symbol,
-            "interval": interval,
-            "startTime": timestamp,
-            "endTime": int(time.time() * 1000),
-        },
-    }
-    try:
-        response = requests.post("https://api.hyperliquid.xyz/info", json=payload, timeout=20)
-        response.raise_for_status()
-        candles = response.json()
-    except (requests.RequestException, ValueError) as error:
-        raise RuntimeError(f"Unable to download Hyperliquid data: {error}") from error
-
-    if not isinstance(candles, list):
-        raise RuntimeError(f"Hyperliquid API error: {candles}")
-
-    features = (
-        "open_time, open, high, low, close, volume, close_time, quote_asset_vol, "
-        "number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume"
-    )
-    for candle in candles:
-        values = (
-            candle["t"], float(candle["o"]), float(candle["h"]), float(candle["l"]),
-            float(candle["c"]), float(candle["v"]), candle["T"], None,
-            candle.get("n"), None, None,
-        )
-        cursor.execute(
-            f"INSERT OR IGNORE INTO candles ({features}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            values,
-        )
-        cursor.execute("INSERT OR IGNORE INTO status (open_time) VALUES (?)", (candle["t"],))
-
-    print(f"Candles collected: {len(candles)}")
     
