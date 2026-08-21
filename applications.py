@@ -5,43 +5,20 @@ import json as js
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-from scipy.signal import savgol_filter
+from database import *
 
-def general_application(cursor, name, function, window, parameters, last_timestamp):
+def general_application(active_database: MarketLabDataBase, name, function, window, parameters, last_timestamp):
 
     window = int(window)
-    cursor.execute("PRAGMA table_info(candles)")
+    cursor = active_database.cursor
 
     if not mf.column_exists(cursor, "candles", name):
-
-        cursor.execute(f"""
-            ALTER TABLE candles 
-            ADD COLUMN {name} REAL
-    """)
-
-        cursor.connection.commit()
-
+        active_database.add_column(name, "candles")
+        active_database.database_commit()
     else:
-        cursor.execute(f"""
-            ALTER TABLE candles
-            DROP COLUMN {name}""")
-
-        cursor.connection.commit()
-
-        cursor.execute(f"""
-            ALTER TABLE candles 
-            ADD COLUMN {name} REAL
-    """)
-        cursor.connection.commit()
-
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS indicators_metadata(
-        column_name TEXT PRIMARY KEY,
-        function_name TEXT,
-        parameters TEXT
-        )
-""")
+        active_database.drop_column(name, "candles")
+        active_database.add_column(name, "candles")
+        active_database.database_commit()
 
     cursor.connection.commit()
     
@@ -49,39 +26,16 @@ def general_application(cursor, name, function, window, parameters, last_timesta
     mat = []
 
     for i in range(len(parameters)):
-
         data = None
-
-        cursor.execute(f"""
-            SELECT {parameters[i]}
-            FROM candles
-            ORDER BY open_time
-        """)
-
-        data = cursor.fetchall()
-
+        data = active_database.get_data(table="candles", column=parameters[i])
+        
         data = np.array([r[0] for r in data])
         mat.append(data)
 
     rows = np.array(mat)
 
-    cursor.execute(f"""
-    SELECT open_time
-    FROM candles
-    ORDER BY open_time
-    """)
-
-    open_times = cursor.fetchall()
-    open_times = [o[0] for o in open_times]
-
+    open_times = active_database.get_open_times()
     total = len(open_times)
-
-    if not parameters:
-        raise ValueError("Select at least one parameter.")
-    if total < window:
-        raise ValueError(
-            f"Not enough candles for a window of {window}. Available candles: {total}."
-        )
 
     results = []
 
@@ -117,20 +71,12 @@ def general_application(cursor, name, function, window, parameters, last_timesta
             f"computed {name} : {100*(i+1)/(total-window+1):.1f} %                                   ",
             end="\r"
         )
-
-    cursor.executemany(f"""
-    UPDATE candles
-    SET {name} = ?
-    WHERE open_time = ?
-""", results)
-
-
     json_para = js.dumps(parameters)
 
-    cursor.execute(f"""
-        INSERT INTO indicators_metadata (column_name, function_name, parameters)
-        VALUES (?, ?, ?)
-""", (name, function.__name__, json_para))
+    active_database.add_calculated_indicator(results=results, 
+                                             name=name, 
+                                             json_para=json_para, 
+                                             function_name=function.__name__)
 
 
 def ganeral_event_application(cursor, name,function, window, data):
